@@ -2,7 +2,7 @@
 import jwt from "jsonwebtoken";
 import db from "../models/index.js";
 
-export const authenticate = async (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "Missing token" });
 
@@ -16,7 +16,10 @@ export const authenticate = async (req, res, next) => {
       id: user.id,
       role_id: user.role_id,
       username: user.username,
+      role: user.role, // 添加 role 字段
       client_type: decoded.aud || user.client_type, // 用 aud 字段更安全
+      email: user.email,
+      name: user.name,
     };
 
     next();
@@ -24,3 +27,6 @@ export const authenticate = async (req, res, next) => {
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
+
+export default authenticate;
+export { authenticate };

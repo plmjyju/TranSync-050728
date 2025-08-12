@@ -50,6 +50,69 @@ export default (sequelize, DataTypes) => {
       manufacturer_mid: { type: DataTypes.STRING(100) },
       custom_note: { type: DataTypes.STRING(500) },
 
+      // FTZ (自由贸易区) 出入口信息字段
+      ftz_entry_port: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ入境口岸",
+      },
+      ftz_entry_date: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "FTZ入境日期",
+      },
+      ftz_entry_permit: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ入境许可证号",
+      },
+      ftz_customs_declaration: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ海关申报单号",
+      },
+      ftz_zone_code: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "FTZ自贸区代码",
+      },
+      ftz_bonded_warehouse: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ保税仓库代码",
+      },
+      ftz_regulatory_status: {
+        type: DataTypes.ENUM("pending", "cleared", "bonded", "exempted"),
+        allowNull: true,
+        defaultValue: "pending",
+        comment: "FTZ监管状态",
+      },
+      ftz_exit_port: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ出境口岸",
+      },
+      ftz_exit_date: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "FTZ出境日期",
+      },
+      ftz_exit_permit: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        comment: "FTZ出境许可证号",
+      },
+      ftz_duty_paid: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        comment: "已缴关税金额",
+      },
+      ftz_tax_paid: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        comment: "已缴税费金额",
+      },
+
       created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     },
     {

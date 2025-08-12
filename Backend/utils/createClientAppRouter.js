@@ -1,7 +1,7 @@
 // utils/createClientAppRouter.js
 import express from "express";
-import { authenticate } from "../middlewares/authenticate.js";
-import { checkClientType } from "../middlewares/checkClientType.js";
+import authenticate from "../middlewares/authenticate.js";
+import checkPermission from "../middlewares/checkPermission.js";
 
 export const createClientAppRouter = async (app, clientType) => {
   try {
@@ -12,8 +12,13 @@ export const createClientAppRouter = async (app, clientType) => {
     // 构造路径前缀
     const prefix = `/api/${clientType}`;
 
-    // 安全封装：自动加入鉴权 & 类型限制
-    app.use(prefix, authenticate, checkClientType(clientType), router);
+    // 安全封装：自动加入鉴权 & 权限检查
+    app.use(
+      prefix,
+      authenticate,
+      checkPermission(`${clientType}.access`),
+      router
+    );
 
     console.log(`✅ ${clientType.toUpperCase()} 路由挂载完成 → ${prefix}`);
   } catch (err) {

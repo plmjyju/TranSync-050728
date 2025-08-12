@@ -6,10 +6,8 @@ export default (sequelize, DataTypes) => {
       username: { type: DataTypes.STRING(50), allowNull: false, unique: true },
       password_hash: { type: DataTypes.STRING(255), allowNull: false },
       full_name: { type: DataTypes.STRING(100) },
-      status: {
-        type: DataTypes.ENUM("active", "disabled"),
-        defaultValue: "active",
-      },
+      email: { type: DataTypes.STRING },
+      status: { type: DataTypes.BOOLEAN, defaultValue: true },
       last_login_at: { type: DataTypes.DATE },
       created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
       updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },

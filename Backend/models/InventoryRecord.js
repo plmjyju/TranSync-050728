@@ -9,10 +9,10 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
         references: { model: "packages", key: "id" },
       },
-      warehouse_id: {
+      warehouse_location_id: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        references: { model: "warehouses", key: "id" },
+        allowNull: true,
+        references: { model: "warehouse_locations", key: "id" },
       },
       type: {
         type: DataTypes.ENUM("in", "out"),
@@ -47,9 +47,9 @@ export default (sequelize, DataTypes) => {
       foreignKey: "package_id",
       as: "package",
     });
-    InventoryRecord.belongsTo(models.Warehouse, {
-      foreignKey: "warehouse_id",
-      as: "warehouse",
+    InventoryRecord.belongsTo(models.WarehouseLocation, {
+      foreignKey: "warehouse_location_id",
+      as: "warehouseLocation",
     });
   };
 

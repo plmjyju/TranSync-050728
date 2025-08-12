@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent端条形码扫描演示</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+      }
+
+      .header p {
+        font-size: 1.1em;
+        opacity: 0.9;
+      }
+
+      .main {
+        padding: 40px;
+      }
+
+      .scan-section {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 30px;
+        margin-bottom: 30px;
+        border: 2px dashed #dee2e6;
+        text-align: center;
+      }
+
+      .scan-input {
+        width: 100%;
+        padding: 15px;
+        font-size: 1.2em;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        text-align: center;
+        background: white;
+      }
+
+      .scan-input:focus {
+        outline: none;
+        border-color: #4caf50;
+        box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
+      }
+
+      .button {
+        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        margin: 5px;
+        transition: all 0.3s ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+      }
+
+      .button.secondary {
+        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+      }
+
+      .button.batch {
+        background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+      }
+
+      .result {
+        margin-top: 20px;
+        padding: 20px;
+        border-radius: 8px;
+        display: none;
+      }
+
+      .result.success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+      }
+
+      .result.error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+      }
+
+      .result.info {
+        background: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+      }
+
+      .package-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .info-card {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #4caf50;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .info-card h3 {
+        color: #333;
+        margin-bottom: 10px;
+      }
+
+      .info-card p {
+        color: #666;
+        margin: 5px 0;
+      }
+
+      .batch-section {
+        margin-top: 30px;
+      }
+
+      .batch-codes {
+        width: 100%;
+        height: 120px;
+        padding: 15px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 1em;
+        resize: vertical;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: bold;
+        text-transform: uppercase;
+      }
+
+      .status-prepared {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .status-arrived {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .loading {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #4caf50;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📦 Agent端条形码扫描</h1>
+        <p>扫描包裹条形码确认到仓 - TranSync仓库管理系统</p>
+      </div>
+
+      <div class="main">
+        <!-- 单个包裹扫描 -->
+        <div class="scan-section">
+          <h2>🔍 扫描包裹条形码</h2>
+          <p>将光标置于输入框，扫描条形码或手动输入包裹编号</p>
+          <input
+            type="text"
+            id="packageCodeInput"
+            class="scan-input"
+            placeholder="扫描条形码或输入包裹编号 (例: IB0A001-250729A-001)"
+            autofocus
+          />
+          <div>
+            <button class="button" onclick="searchPackage()">
+              🔍 查询包裹
+            </button>
+            <button class="button" onclick="confirmPackage()">
+              ✅ 确认到仓
+            </button>
+            <button class="button secondary" onclick="clearInput()">
+              🗑️ 清空
+            </button>
+          </div>
+        </div>
+
+        <!-- 结果显示 -->
+        <div id="result" class="result"></div>
+
+        <!-- 包裹信息卡片 -->
+        <div id="packageInfo" class="package-info" style="display: none"></div>
+
+        <!-- 批量扫描 -->
+        <div class="batch-section">
+          <h2>📋 批量确认包裹</h2>
+          <p>一行一个包裹编号，支持批量确认</p>
+          <textarea
+            id="batchCodes"
+            class="batch-codes"
+            placeholder="输入多个包裹编号，每行一个：&#10;IB0A001-250729A-001&#10;IB0A001-250729A-002&#10;IB0A001-250729A-003"
+          ></textarea>
+          <div>
+            <button class="button batch" onclick="batchConfirm()">
+              📦 批量确认
+            </button>
+            <button class="button secondary" onclick="clearBatch()">
+              🗑️ 清空
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 配置
+      const API_BASE = "/api/agent/packages";
+      const TOKEN = localStorage.getItem("agentToken") || "YOUR_TOKEN_HERE";
+
+      // 工具函数
+      function showResult(message, type = "info") {
+        const resultDiv = document.getElementById("result");
+        resultDiv.className = `result ${type}`;
+        resultDiv.innerHTML = message;
+        resultDiv.style.display = "block";
+
+        // 3秒后自动隐藏
+        setTimeout(() => {
+          resultDiv.style.display = "none";
+        }, 5000);
+      }
+
+      function showLoading(button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="loading"></span> 处理中...';
+        button.disabled = true;
+
+        return () => {
+          button.innerHTML = originalText;
+          button.disabled = false;
+        };
+      }
+
+      async function apiRequest(url, options = {}) {
+        try {
+          const response = await fetch(url, {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${TOKEN}`,
+              ...options.headers,
+            },
+            ...options,
+          });
+
+          const data = await response.json();
+          return { success: response.ok, status: response.status, data };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
+      }
+
+      // 显示包裹信息
+      function displayPackageInfo(packageData) {
+        const infoDiv = document.getElementById("packageInfo");
+        const canConfirm = packageData.can_confirm_arrival;
+        const status = packageData.status;
+
+        infoDiv.innerHTML = `
+                <div class="info-card">
+                    <h3>📦 包裹信息</h3>
+                    <p><strong>包裹编号:</strong> ${
+                      packageData.package_code
+                    }</p>
+                    <p><strong>状态:</strong> <span class="status-badge status-${status}">${status}</span></p>
+                    <p><strong>创建时间:</strong> ${new Date(
+                      packageData.created_at
+                    ).toLocaleString()}</p>
+                    ${
+                      packageData.arrival_confirmed_at
+                        ? `<p><strong>确认时间:</strong> ${new Date(
+                            packageData.arrival_confirmed_at
+                          ).toLocaleString()}</p>`
+                        : ""
+                    }
+                </div>
+                <div class="info-card">
+                    <h3>🏢 客户信息</h3>
+                    <p><strong>公司名称:</strong> ${
+                      packageData.client_company
+                    }</p>
+                    <p><strong>入库单号:</strong> ${packageData.inbond_code}</p>
+                    <p><strong>物品数量:</strong> ${
+                      packageData.items_count
+                    } 件</p>
+                </div>
+                <div class="info-card">
+                    <h3>📏 物理信息</h3>
+                    <p><strong>重量:</strong> ${
+                      packageData.weight_kg || "未设定"
+                    } kg</p>
+                    <p><strong>尺寸:</strong> ${
+                      packageData.dimensions.length_cm || 0
+                    } × ${packageData.dimensions.width_cm || 0} × ${
+          packageData.dimensions.height_cm || 0
+        } cm</p>
+                    <p><strong>可确认到仓:</strong> ${
+                      canConfirm ? "✅ 是" : "❌ 否"
+                    }</p>
+                </div>
+            `;
+        infoDiv.style.display = "grid";
+      }
+
+      // 搜索包裹
+      async function searchPackage() {
+        const packageCode = document
+          .getElementById("packageCodeInput")
+          .value.trim();
+        if (!packageCode) {
+          showResult("❌ 请输入包裹编号", "error");
+          return;
+        }
+
+        const result = await apiRequest(`${API_BASE}/search/${packageCode}`);
+
+        if (result.success) {
+          showResult(`✅ 找到包裹: ${packageCode}`, "success");
+          displayPackageInfo(result.data.package);
+        } else {
+          showResult(
+            `❌ 搜索失败: ${result.data?.error || result.error}`,
+            "error"
+          );
+          document.getElementById("packageInfo").style.display = "none";
+        }
+      }
+
+      // 确认包裹到仓
+      async function confirmPackage() {
+        const packageCode = document
+          .getElementById("packageCodeInput")
+          .value.trim();
+        if (!packageCode) {
+          showResult("❌ 请输入包裹编号", "error");
+          return;
+        }
+
+        const button = event.target;
+        const hideLoading = showLoading(button);
+
+        const result = await apiRequest(`${API_BASE}/confirm-arrival`, {
+          method: "POST",
+          body: JSON.stringify({
+            package_code: packageCode,
+            arrival_note: `通过Web界面确认包裹 ${packageCode} 到仓`,
+          }),
+        });
+
+        hideLoading();
+
+        if (result.success) {
+          showResult(`🎉 包裹 ${packageCode} 已成功确认到仓！`, "success");
+          // 重新搜索以更新显示信息
+          setTimeout(() => searchPackage(), 1000);
+        } else {
+          showResult(
+            `❌ 确认失败: ${result.data?.error || result.error}`,
+            "error"
+          );
+        }
+      }
+
+      // 批量确认
+      async function batchConfirm() {
+        const batchText = document.getElementById("batchCodes").value.trim();
+        if (!batchText) {
+          showResult("❌ 请输入包裹编号", "error");
+          return;
+        }
+
+        const packageCodes = batchText
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+
+        if (packageCodes.length === 0) {
+          showResult("❌ 没有有效的包裹编号", "error");
+          return;
+        }
+
+        const button = event.target;
+        const hideLoading = showLoading(button);
+
+        const result = await apiRequest(`${API_BASE}/confirm-arrival-batch`, {
+          method: "POST",
+          body: JSON.stringify({
+            package_codes: packageCodes,
+            arrival_note: `通过Web界面批量确认 ${packageCodes.length} 个包裹到仓`,
+          }),
+        });
+
+        hideLoading();
+
+        if (result.success) {
+          const summary = result.data.summary;
+          let message = `🎉 批量确认完成！<br>`;
+          message += `✅ 成功: ${summary.total_confirmed}个<br>`;
+          message += `❌ 失败: ${summary.total_failed}个<br>`;
+
+          if (result.data.errors && result.data.errors.length > 0) {
+            message += `<br><strong>错误详情:</strong><br>`;
+            result.data.errors.forEach((error) => {
+              message += `• ${error.package_code}: ${error.error}<br>`;
+            });
+          }
+
+          showResult(message, summary.total_failed > 0 ? "info" : "success");
+        } else {
+          showResult(
+            `❌ 批量确认失败: ${result.data?.error || result.error}`,
+            "error"
+          );
+        }
+      }
+
+      // 清空输入
+      function clearInput() {
+        document.getElementById("packageCodeInput").value = "";
+        document.getElementById("packageInfo").style.display = "none";
+        document.getElementById("result").style.display = "none";
+      }
+
+      function clearBatch() {
+        document.getElementById("batchCodes").value = "";
+      }
+
+      // 条形码扫描监听
+      let scanBuffer = [];
+      let lastScanTime = 0;
+
+      document.addEventListener("keydown", function (e) {
+        const now = Date.now();
+
+        // 如果距离上次输入超过200ms，清空缓冲区（新的扫描开始）
+        if (now - lastScanTime > 200) {
+          scanBuffer = [];
+        }
+
+        lastScanTime = now;
+
+        if (e.key === "Enter" && scanBuffer.length > 5) {
+          // 条形码扫描完成
+          const scannedCode = scanBuffer.join("");
+          document.getElementById("packageCodeInput").value = scannedCode;
+          scanBuffer = [];
+
+          // 自动搜索包裹
+          searchPackage();
+
+          e.preventDefault();
+        } else if (
+          e.key.length === 1 &&
+          document.activeElement === document.getElementById("packageCodeInput")
+        ) {
+          // 收集扫描字符
+          scanBuffer.push(e.key);
+        }
+      });
+
+      // 页面加载完成后的初始化
+      document.addEventListener("DOMContentLoaded", function () {
+        // 检查是否有保存的Token
+        if (TOKEN === "YOUR_TOKEN_HERE") {
+          showResult(
+            '⚠️ 请先设置Agent认证令牌。在浏览器控制台执行: localStorage.setItem("agentToken", "您的JWT令牌")',
+            "error"
+          );
+        }
+
+        // 聚焦到输入框
+        document.getElementById("packageCodeInput").focus();
+
+        console.log("🎯 Agent端条形码扫描系统已启动");
+        console.log("💡 使用提示:");
+        console.log(
+          '  1. 设置Token: localStorage.setItem("agentToken", "您的JWT令牌")'
+        );
+        console.log("  2. 将光标置于输入框，直接扫描条形码");
+        console.log("  3. 扫描后会自动搜索包裹信息");
+        console.log('  4. 点击"确认到仓"按钮完成确认');
+      });
+    </script>
+  </body>
+</html>

@@ -13,9 +13,29 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
         references: { model: "users", key: "id" },
       },
-      warehouse_id: { type: DataTypes.BIGINT, allowNull: false },
       shipping_type: { type: DataTypes.ENUM("air", "sea"), allowNull: false },
       arrival_method: { type: DataTypes.STRING(20) },
+      clearance_type: {
+        type: DataTypes.ENUM(
+          "general_trade", // 一般贸易
+          "bonded_warehouse", // 保税仓库
+          "cross_border_ecom", // 跨境电商
+          "personal_items", // 个人物品
+          "samples", // 样品
+          "temporary_import", // 暂时进口
+          "duty_free", // 免税
+          "re_import" // 复进口
+        ),
+        allowNull: false,
+        defaultValue: "general_trade",
+        comment: "清关类型",
+      },
+      tax_type_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        references: { model: "tax_types", key: "id" },
+        comment: "税务类型ID",
+      },
       status: {
         type: DataTypes.ENUM("draft", "submitted", "arrived", "completed"),
         defaultValue: "draft",
@@ -32,9 +52,13 @@ export default (sequelize, DataTypes) => {
 
   Inbond.associate = (models) => {
     Inbond.belongsTo(models.User, { foreignKey: "client_id", as: "client" });
-    Inbond.belongsTo(models.Warehouse, {
-      foreignKey: "warehouse_id",
-      as: "warehouse",
+    // Inbond.belongsTo(models.Warehouse, {
+    //   foreignKey: "warehouse_id",
+    //   as: "warehouse",
+    // });
+    Inbond.belongsTo(models.TaxType, {
+      foreignKey: "tax_type_id",
+      as: "taxType",
     });
     Inbond.hasMany(models.Package, { foreignKey: "inbond_id", as: "packages" });
   };

@@ -1,7 +1,7 @@
 import db from "../models/index.js";
 const { Role, Permission } = db;
 
-export const checkPermission = (permissionName) => {
+const checkPermission = (permissionName) => {
   return async (req, res, next) => {
     const user = req.user;
     const role = await Role.findByPk(user.role_id, {
@@ -19,3 +19,5 @@ export const checkPermission = (permissionName) => {
     next();
   };
 };
+
+export default checkPermission;

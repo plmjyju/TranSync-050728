@@ -2,9 +2,6 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import Sequelize from "sequelize";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,9 +14,15 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     dialect: "mysql",
-    logging: false,
+    logging: console.log, // 启用详细日志
   }
 );
+
+console.log("=== Sequelize配置 ===");
+console.log("Host:", process.env.DB_HOST);
+console.log("Port:", process.env.DB_PORT);
+console.log("Database:", process.env.DB_NAME);
+console.log("User:", process.env.DB_USER);
 
 const db = { sequelize, Sequelize };
 

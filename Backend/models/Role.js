@@ -6,6 +6,7 @@ export default (sequelize, DataTypes) => {
       name: { type: DataTypes.STRING(50), unique: true },
       display_name: { type: DataTypes.STRING(100) },
       description: { type: DataTypes.TEXT },
+      status: { type: DataTypes.BOOLEAN, defaultValue: true },
     },
     {
       tableName: "roles",
