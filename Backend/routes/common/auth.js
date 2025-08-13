@@ -2,6 +2,7 @@ import express from "express";
 import db from "../../models/index.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import config from "../../config/environment.js";
 
 const router = express.Router();
 
@@ -20,28 +21,37 @@ const generateToken = (user, userType) => {
       username: user.username || user.customerName,
       email: user.email,
     },
-    process.env.JWT_SECRET || "your-secret-key",
-    { expiresIn: "24h" }
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresIn }
   );
 };
 
 // Client login (Customer table)
 router.post("/login/client", async (req, res) => {
   try {
-    validateRequiredFields(["adminAccount", "password"], req.body);
+    validateRequiredFields(["username", "password"], req.body);
 
-    const { adminAccount, password } = req.body;
+    const { username, password } = req.body;
+    console.log("Client login attempt:", username);
 
     const customer = await db.Customer.findOne({
-      where: { adminAccount, isActive: true },
+      where: { adminAccount: username, isActive: true },
     });
 
     if (!customer) {
+      console.log("Customer not found:", username);
       return res.status(404).json({ error: "Customer not found or inactive" });
     }
 
-    // For now using plain text comparison, should use bcrypt in production
-    const isPasswordValid = password === customer.passwordHash;
+    console.log("Customer found:", customer.adminAccount);
+    console.log("Stored hash:", customer.passwordHash);
+
+    // Use bcrypt to compare password
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      customer.passwordHash
+    );
+    console.log("Password validation result:", isPasswordValid);
 
     if (!isPasswordValid) {
       return res.status(401).json({ error: "Invalid credentials" });
@@ -55,8 +65,8 @@ router.post("/login/client", async (req, res) => {
         email: customer.email,
         salesRepId: customer.salesRepId,
       },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" }
+      config.jwt.secret,
+      { expiresIn: config.jwt.expiresIn }
     );
 
     return res.status(200).json({
@@ -77,7 +87,7 @@ router.post("/login/client", async (req, res) => {
   }
 });
 
-// Agent login (User table with client_type = 'agent')
+// Agent login (User table - simplified for testing)
 router.post("/login/agent", async (req, res) => {
   try {
     validateRequiredFields(["username", "password"], req.body);
@@ -85,7 +95,7 @@ router.post("/login/agent", async (req, res) => {
     const { username, password } = req.body;
 
     const agent = await db.User.findOne({
-      where: { username, client_type: "agent" },
+      where: { username },
     });
 
     if (!agent) {
@@ -116,7 +126,7 @@ router.post("/login/agent", async (req, res) => {
   }
 });
 
-// Warehouse login (User table with client_type = 'warehouse')
+// Warehouse login (User table - simplified for testing)
 router.post("/login/warehouse", async (req, res) => {
   try {
     validateRequiredFields(["username", "password"], req.body);
@@ -124,7 +134,7 @@ router.post("/login/warehouse", async (req, res) => {
     const { username, password } = req.body;
 
     const warehouse = await db.User.findOne({
-      where: { username, client_type: "warehouse" },
+      where: { username },
     });
 
     if (!warehouse) {
@@ -158,7 +168,7 @@ router.post("/login/warehouse", async (req, res) => {
   }
 });
 
-// OMP login (User table with client_type = 'omp')
+// OMP login (User table - simplified for testing)
 router.post("/login/omp", async (req, res) => {
   try {
     validateRequiredFields(["username", "password"], req.body);
@@ -166,7 +176,7 @@ router.post("/login/omp", async (req, res) => {
     const { username, password } = req.body;
 
     const omp = await db.User.findOne({
-      where: { username, client_type: "omp" },
+      where: { username },
     });
 
     if (!omp) {

@@ -507,4 +507,106 @@ router.patch(
   }
 );
 
+// 提交 Forecast：校验每个包裹至少一个操作需求并统计需求分布
+router.post(
+  "/forecasts/:id/submit",
+  authenticate,
+  checkPermission("agent.forecast.edit"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const { id } = req.params;
+      const forecast = await db.Forecast.findOne({
+        where: { id, agent_id: req.user.id },
+        transaction: t,
+      });
+      if (!forecast) {
+        await t.rollback();
+        return res
+          .status(404)
+          .json({ success: false, message: "预报表不存在或无权限" });
+      }
+      if (forecast.status !== "draft") {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ success: false, message: "仅草稿状态可提交" });
+      }
+
+      const packages = await db.Package.findAll({
+        where: { forecast_id: id },
+        include: [
+          {
+            model: db.OperationRequirement,
+            as: "operationRequirements",
+            through: { attributes: [] },
+            attributes: ["id", "requirement_code", "requirement_name"],
+          },
+        ],
+        transaction: t,
+      });
+
+      if (packages.length === 0) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ success: false, message: "无包裹，不能提交" });
+      }
+
+      const invalid = packages.filter(
+        (p) => !p.operationRequirements || p.operationRequirements.length === 0
+      );
+      if (invalid.length > 0) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "存在未配置操作需求的包裹",
+            invalid_package_ids: invalid.map((p) => p.id),
+          });
+      }
+
+      const agg = new Map();
+      for (const pkg of packages) {
+        for (const reqObj of pkg.operationRequirements) {
+          const key = reqObj.requirement_code;
+          if (!agg.has(key)) {
+            agg.set(key, {
+              requirement_code: key,
+              requirement_name: reqObj.requirement_name,
+              count: 0,
+            });
+          }
+          agg.get(key).count += 1;
+        }
+      }
+      const summary = Array.from(agg.values()).sort((a, b) =>
+        a.requirement_code.localeCompare(b.requirement_code)
+      );
+
+      await forecast.update(
+        {
+          status: "booked",
+          requirement_summary_json: JSON.stringify(summary),
+          requirement_validation_passed: true,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+      return res.json({
+        success: true,
+        message: "提交成功",
+        forecast_id: forecast.id,
+        requirement_summary: summary,
+      });
+    } catch (e) {
+      await t.rollback();
+      console.error(e);
+      return res.status(500).json({ success: false, message: "提交失败" });
+    }
+  }
+);
+
 export default router;

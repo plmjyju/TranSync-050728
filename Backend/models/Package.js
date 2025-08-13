@@ -152,15 +152,12 @@ export default (sequelize, DataTypes) => {
     });
 
     // 关联操作需求（多对多）
-    // 暂时禁用，等模型问题解决后再启用
-    /*
     Package.belongsToMany(models.OperationRequirement, {
       through: models.PackageOperationRequirement,
       foreignKey: "package_id",
       otherKey: "operation_requirement_id",
       as: "operationRequirements",
     });
-    */
 
     // 关联板子分配（多对一）
     Package.belongsTo(models.PalletAllocation, {

@@ -7,13 +7,18 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "backend": "node index.js",
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "seed:permissions": "node seed/initPermissionsAndRoles.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "moment-timezone": "^0.6.0",
     "mysql2": "^3.14.2",
     "sequelize": "^6.37.7"
   }

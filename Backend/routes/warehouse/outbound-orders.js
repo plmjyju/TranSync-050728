@@ -98,11 +98,13 @@ router.post(
       }
 
       if (palletAllocations.length !== pallet_numbers.length) {
-        const foundPallets = palletAllocations.map(p => p.pallet_number);
-        const missingPallets = pallet_numbers.filter(p => !foundPallets.includes(p));
+        const foundPallets = palletAllocations.map((p) => p.pallet_number);
+        const missingPallets = pallet_numbers.filter(
+          (p) => !foundPallets.includes(p)
+        );
         await transaction.rollback();
         return res.status(404).json({
-          error: `以下板子未找到或未入库: ${missingPallets.join(', ')}`,
+          error: `以下板子未找到或未入库: ${missingPallets.join(", ")}`,
         });
       }
 
@@ -115,11 +117,11 @@ router.post(
       const clientIds = [
         ...new Set(
           allPackages
-            .filter(pkg => pkg.forecast)
+            .filter((pkg) => pkg.forecast)
             .map((pkg) => pkg.forecast.client_id)
         ),
       ];
-      
+
       if (clientIds.length === 0) {
         await transaction.rollback();
         return res.status(400).json({
@@ -140,7 +142,7 @@ router.post(
       const awbNumbers = [
         ...new Set(
           allPackages
-            .filter(pkg => pkg.forecast)
+            .filter((pkg) => pkg.forecast)
             .map((pkg) => pkg.forecast.awb)
         ),
       ];
@@ -183,7 +185,7 @@ router.post(
             awb_numbers: awbNumbers,
             total_packages: totalPackages,
             total_weight: totalWeight,
-            pallet_details: palletAllocations.map(pallet => ({
+            pallet_details: palletAllocations.map((pallet) => ({
               pallet_number: pallet.pallet_number,
               awb_number: pallet.awb_number,
               package_count: pallet.packages?.length || 0,
@@ -231,11 +233,7 @@ router.get(
   checkPermission("warehouse.outbound.view"),
   async (req, res) => {
     try {
-      const { 
-        client_id, 
-        awb_number,
-        pallet_number 
-      } = req.query;
+      const { client_id, awb_number, pallet_number } = req.query;
 
       const whereClause = {
         status: "stored", // 只显示已入库的板子
@@ -290,19 +288,19 @@ router.get(
       });
 
       // 过滤掉没有包裹的板子，并按客户分组
-      const validPallets = palletAllocations.filter(pallet => 
-        pallet.packages && pallet.packages.length > 0
+      const validPallets = palletAllocations.filter(
+        (pallet) => pallet.packages && pallet.packages.length > 0
       );
 
       // 按客户分组
       const palletsByClient = {};
-      validPallets.forEach(pallet => {
-        const packages = pallet.packages.filter(pkg => pkg.forecast);
+      validPallets.forEach((pallet) => {
+        const packages = pallet.packages.filter((pkg) => pkg.forecast);
         if (packages.length === 0) return;
 
         const clientId = packages[0].forecast.client_id;
         const clientName = packages[0].forecast.client.name;
-        
+
         if (!palletsByClient[clientId]) {
           palletsByClient[clientId] = {
             client_id: clientId,
@@ -312,8 +310,10 @@ router.get(
         }
 
         // 获取这个板子涉及的所有AWB
-        const awbNumbers = [...new Set(packages.map(pkg => pkg.forecast.awb))];
-        
+        const awbNumbers = [
+          ...new Set(packages.map((pkg) => pkg.forecast.awb)),
+        ];
+
         palletsByClient[clientId].pallets.push({
           id: pallet.id,
           pallet_number: pallet.pallet_number,
@@ -322,7 +322,10 @@ router.get(
           allocated_package_count: pallet.allocated_package_count,
           awb_numbers: awbNumbers,
           package_count: packages.length,
-          total_weight: packages.reduce((sum, pkg) => sum + (parseFloat(pkg.weight_kg) || 0), 0),
+          total_weight: packages.reduce(
+            (sum, pkg) => sum + (parseFloat(pkg.weight_kg) || 0),
+            0
+          ),
           status: pallet.status,
           created_at: pallet.created_at,
         });
@@ -341,165 +344,168 @@ router.get(
 );
 
 // 基于板子创建出库单
-router.post(
-  "/create",
-  authenticate,
-  async (req, res) => {
-    const transaction = await db.sequelize.transaction();
+router.post("/create", authenticate, async (req, res) => {
+  const transaction = await db.sequelize.transaction();
 
-    try {
-      const {
-        pallet_numbers,
+  try {
+    const {
+      pallet_numbers,
+      pickup_contact_person,
+      pickup_contact_phone,
+      pickup_vehicle_info,
+      notes,
+    } = req.body;
+
+    // 验证输入
+    if (
+      !pallet_numbers ||
+      !Array.isArray(pallet_numbers) ||
+      pallet_numbers.length === 0
+    ) {
+      return res.status(400).json({ error: "必须提供至少一个板号" });
+    }
+
+    // 获取板子信息并验证
+    const palletAllocations = await PalletAllocation.findAll({
+      where: {
+        pallet_number: pallet_numbers,
+        status: "stored", // 只能选择已入库的板子
+      },
+      include: [
+        {
+          model: Package,
+          as: "packages",
+          include: [
+            {
+              model: Forecast,
+              as: "forecast",
+              attributes: ["id", "client_id", "awb", "mawb"],
+              include: [
+                {
+                  model: User,
+                  as: "client",
+                  attributes: ["id", "username", "name"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (palletAllocations.length !== pallet_numbers.length) {
+      return res.status(400).json({
+        error: "部分板号不存在或不可用于出库",
+      });
+    }
+
+    // 验证所有板子属于同一个客户
+    const clientIds = new Set();
+    const awbNumbers = new Set();
+    let totalPackages = 0;
+    let totalWeight = 0;
+
+    palletAllocations.forEach((pallet) => {
+      pallet.packages.forEach((pkg) => {
+        if (pkg.forecast) {
+          clientIds.add(pkg.forecast.client_id);
+          awbNumbers.add(pkg.forecast.awb);
+          totalPackages++;
+          totalWeight += parseFloat(pkg.weight_kg) || 0;
+        }
+      });
+    });
+
+    if (clientIds.size !== 1) {
+      return res.status(400).json({
+        error: "所选板子必须属于同一个客户",
+      });
+    }
+
+    const clientId = Array.from(clientIds)[0];
+
+    // 生成出库单号
+    const today = new Date();
+    const dateStr = today.toISOString().slice(2, 10).replace(/-/g, "");
+    const existingCount = await OutboundOrder.count({
+      where: {
+        outbound_number: {
+          [db.Sequelize.Op.like]: `OUT${dateStr}%`,
+        },
+      },
+    });
+    const outboundNumber = `OUT${dateStr}-${String(existingCount + 1).padStart(
+      3,
+      "0"
+    )}`;
+
+    const outboundOrder = await OutboundOrder.create(
+      {
+        outbound_number: outboundNumber,
+        client_id: clientId,
+        awb_numbers: awbNumbers,
+        pallet_numbers: pallet_numbers,
+        total_packages: totalPackages,
+        total_weight: totalWeight,
         pickup_contact_person,
         pickup_contact_phone,
         pickup_vehicle_info,
         notes,
-      } = req.body;
+        created_by: req.user.id,
+      },
+      { transaction }
+    );
 
-      // 验证输入
-      if (!pallet_numbers || !Array.isArray(pallet_numbers) || pallet_numbers.length === 0) {
-        return res.status(400).json({ error: "必须提供至少一个板号" });
-      }
-
-      // 获取板子信息并验证
-      const palletAllocations = await PalletAllocation.findAll({
-        where: {
-          pallet_number: pallet_numbers,
-          status: "stored", // 只能选择已入库的板子
-        },
-        include: [
-          {
-            model: Package,
-            as: "packages",
-            include: [
-              {
-                model: Forecast,
-                as: "forecast",
-                attributes: ["id", "client_id", "awb", "mawb"],
-                include: [
-                  {
-                    model: User,
-                    as: "client",
-                    attributes: ["id", "username", "name"],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      });
-
-      if (palletAllocations.length !== pallet_numbers.length) {
-        return res.status(400).json({ 
-          error: "部分板号不存在或不可用于出库" 
-        });
-      }
-
-      // 验证所有板子属于同一个客户
-      const clientIds = new Set();
-      const awbNumbers = new Set();
-      let totalPackages = 0;
-      let totalWeight = 0;
-
-      palletAllocations.forEach(pallet => {
-        pallet.packages.forEach(pkg => {
-          if (pkg.forecast) {
-            clientIds.add(pkg.forecast.client_id);
-            awbNumbers.add(pkg.forecast.awb);
-            totalPackages++;
-            totalWeight += parseFloat(pkg.weight_kg) || 0;
-          }
-        });
-      });
-
-      if (clientIds.size !== 1) {
-        return res.status(400).json({
-          error: "所选板子必须属于同一个客户",
-        });
-      }
-
-      const clientId = Array.from(clientIds)[0];
-
-      // 生成出库单号
-      const today = new Date();
-      const dateStr = today.toISOString().slice(2, 10).replace(/-/g, "");
-      const existingCount = await OutboundOrder.count({
-        where: {
-          outbound_number: {
-            [db.Sequelize.Op.like]: `OUT${dateStr}%`,
-          },
-        },
-      });
-      const outboundNumber = `OUT${dateStr}-${String(existingCount + 1).padStart(3, "0")}`;
-
-      const outboundOrder = await OutboundOrder.create(
-        {
-          outbound_number: outboundNumber,
-          client_id: clientId,
-          awb_numbers: awbNumbers,
+    // 记录操作日志
+    await OutboundOrderLog.create(
+      {
+        outbound_order_id: outboundOrder.id,
+        action: "created",
+        operator_id: req.user.id,
+        details: {
           pallet_numbers: pallet_numbers,
+          awb_numbers: awbNumbers,
           total_packages: totalPackages,
           total_weight: totalWeight,
-          pickup_contact_person,
-          pickup_contact_phone,
-          pickup_vehicle_info,
-          notes,
-          created_by: req.user.id,
+          pallet_details: palletAllocations.map((pallet) => ({
+            pallet_number: pallet.pallet_number,
+            awb_number: pallet.awb_number,
+            package_count: pallet.packages?.length || 0,
+          })),
         },
-        { transaction }
-      );
+        notes: `创建出库单，包含${pallet_numbers.length}个板子，${awbNumbers.length}个AWB，${totalPackages}个包裹`,
+      },
+      { transaction }
+    );
 
-      // 记录操作日志
-      await OutboundOrderLog.create(
+    await transaction.commit();
+
+    // 获取完整的出库单信息（包含关联数据）
+    const fullOutboundOrder = await OutboundOrder.findByPk(outboundOrder.id, {
+      include: [
         {
-          outbound_order_id: outboundOrder.id,
-          action: "created",
-          operator_id: req.user.id,
-          details: {
-            pallet_numbers: pallet_numbers,
-            awb_numbers: awbNumbers,
-            total_packages: totalPackages,
-            total_weight: totalWeight,
-            pallet_details: palletAllocations.map(pallet => ({
-              pallet_number: pallet.pallet_number,
-              awb_number: pallet.awb_number,
-              package_count: pallet.packages?.length || 0,
-            })),
-          },
-          notes: `创建出库单，包含${pallet_numbers.length}个板子，${awbNumbers.length}个AWB，${totalPackages}个包裹`,
+          model: User,
+          as: "client",
+          attributes: ["id", "username", "name"],
         },
-        { transaction }
-      );
+        {
+          model: User,
+          as: "creator",
+          attributes: ["id", "username", "name"],
+        },
+      ],
+    });
 
-      await transaction.commit();
-
-      // 获取完整的出库单信息（包含关联数据）
-      const fullOutboundOrder = await OutboundOrder.findByPk(outboundOrder.id, {
-        include: [
-          {
-            model: User,
-            as: "client",
-            attributes: ["id", "username", "name"],
-          },
-          {
-            model: User,
-            as: "creator",
-            attributes: ["id", "username", "name"],
-          },
-        ],
-      });
-
-      res.status(201).json({
-        message: "出库单创建成功",
-        outbound_order: fullOutboundOrder,
-      });
-    } catch (error) {
-      await transaction.rollback();
-      console.error("创建出库单失败:", error);
-      res.status(500).json({ error: "创建出库单失败" });
-    }
+    res.status(201).json({
+      message: "出库单创建成功",
+      outbound_order: fullOutboundOrder,
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("创建出库单失败:", error);
+    res.status(500).json({ error: "创建出库单失败" });
   }
-);
+});
 
 // 获取出库单列表
 router.get(

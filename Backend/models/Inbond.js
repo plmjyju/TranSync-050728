@@ -41,6 +41,17 @@ export default (sequelize, DataTypes) => {
         defaultValue: "draft",
       },
       remark: { type: DataTypes.TEXT },
+      requirement_summary_json: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment:
+          "包裹操作需求统计结果(JSON数组，每项: {requirement_code, requirement_name, count})",
+      },
+      requirement_validation_passed: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        comment: "是否已验证所有包裹具备至少一个操作需求",
+      },
     },
     {
       tableName: "inbonds",

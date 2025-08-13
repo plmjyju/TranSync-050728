@@ -1,37 +1,49 @@
-// routes/wms/forecasts.js
+// routes/omp/forecasts.js
 import express from "express";
 import db from "../../models/index.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { checkPermission } from "../../middlewares/checkPermission.js";
 const router = express.Router();
 
 // 获取已到仓的预报板列表（按时间）
-router.get("/forecasts/arrived", async (req, res) => {
-  try {
-    const forecasts = await db.Forecast.findAll({
-      where: { status: "arrived" },
-      order: [["created_at", "DESC"]],
-    });
-    res.json(forecasts);
-  } catch (err) {
-    console.error("获取到仓预报板失败:", err);
-    res.status(500).json({ message: "服务器错误" });
+router.get(
+  "/forecasts/arrived",
+  authenticate,
+  checkPermission("omp.forecast.view"),
+  async (req, res) => {
+    try {
+      const forecasts = await db.Forecast.findAll({
+        where: { status: "arrived" },
+        order: [["created_at", "DESC"]],
+      });
+      res.json(forecasts);
+    } catch (err) {
+      console.error("获取到仓预报板失败:", err);
+      res.status(500).json({ message: "服务器错误" });
+    }
   }
-});
+);
 
 // 获取某个预报板下的所有包裹
-router.get("/forecasts/:id", async (req, res) => {
-  try {
-    const forecast = await db.Forecast.findByPk(req.params.id, {
-      include: [{ model: db.Package, as: "packages" }],
-    });
-    if (!forecast) {
-      return res.status(404).json({ message: "预报表不存在" });
+router.get(
+  "/forecasts/:id",
+  authenticate,
+  checkPermission("omp.forecast.view"),
+  async (req, res) => {
+    try {
+      const forecast = await db.Forecast.findByPk(req.params.id, {
+        include: [{ model: db.Package, as: "packages" }],
+      });
+      if (!forecast) {
+        return res.status(404).json({ message: "预报表不存在" });
+      }
+      res.json(forecast);
+    } catch (err) {
+      console.error("获取板下包裹失败:", err);
+      res.status(500).json({ message: "服务器错误" });
     }
-    res.json(forecast);
-  } catch (err) {
-    console.error("获取板下包裹失败:", err);
-    res.status(500).json({ message: "服务器错误" });
   }
-});
+);
 
 // 更新包裹状态（如到仓、已分拣）
 router.patch("/packages/:id/status", async (req, res) => {

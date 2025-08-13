@@ -5,6 +5,7 @@ import operationRequirementsRoutes from "./operation-requirements.js";
 import clientRoutes from "./client.js";
 import roleRoutes from "./role.js";
 import userRoutes from "./user.js";
+import permissionsRoutes from "./permissions.js";
 
 const router = express.Router();
 
@@ -15,5 +16,6 @@ router.use("/", operationRequirementsRoutes);
 router.use("/", clientRoutes);
 router.use("/", roleRoutes);
 router.use("/", userRoutes);
+router.use("/permissions", permissionsRoutes);
 
 export default router;

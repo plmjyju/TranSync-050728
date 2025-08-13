@@ -1,21 +1,28 @@
 // routes/wms/forecasts.js
 import express from "express";
 import db from "../../models/index.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { checkPermission } from "../../middlewares/checkPermission.js";
 const router = express.Router();
 
 // 获取已到仓的预报板列表（按时间）
-router.get("/forecasts/arrived", async (req, res) => {
-  try {
-    const forecasts = await db.Forecast.findAll({
-      where: { status: "arrived" },
-      order: [["created_at", "DESC"]],
-    });
-    res.json(forecasts);
-  } catch (err) {
-    console.error("获取到仓预报板失败:", err);
-    res.status(500).json({ message: "服务器错误" });
+router.get(
+  "/forecasts/arrived",
+  authenticate,
+  checkPermission("wms.forecast.view"),
+  async (req, res) => {
+    try {
+      const forecasts = await db.Forecast.findAll({
+        where: { status: "arrived" },
+        order: [["created_at", "DESC"]],
+      });
+      res.json(forecasts);
+    } catch (err) {
+      console.error("获取到仓预报板失败:", err);
+      res.status(500).json({ message: "服务器错误" });
+    }
   }
-});
+);
 
 // 获取某个预报板下的所有包裹
 router.get("/forecasts/:id", async (req, res) => {

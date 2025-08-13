@@ -20,6 +20,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { recordSystemActivity } from "../../utils/recordSystemActivity.js";
 import { authenticate } from "../../middleware/auth.js";
+import config from "../../config/environment.js";
 
 const router = express.Router();
 
@@ -101,9 +102,9 @@ router.post("/login", async (req, res) => {
         email: user.email,
         role_id: user.role_id,
       },
-      process.env.JWT_SECRET,
+      config.jwt.secret,
       {
-        expiresIn: "12h",
+        expiresIn: config.jwt.expiresIn,
         audience: client_type,
       }
     );

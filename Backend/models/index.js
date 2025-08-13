@@ -2,27 +2,39 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import Sequelize from "sequelize";
+import config from "../config/environment.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASS,
+  config.database.name,
+  config.database.user,
+  config.database.password,
   {
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    dialect: "mysql",
-    logging: console.log, // 启用详细日志
+    host: config.database.host,
+    port: config.database.port,
+    dialect: config.database.dialect,
+    logging: false, // 恢复：禁用SQL日志
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
+    define: {
+      timestamps: true,
+      underscored: true,
+      freezeTableName: true,
+    },
   }
 );
 
 console.log("=== Sequelize配置 ===");
-console.log("Host:", process.env.DB_HOST);
-console.log("Port:", process.env.DB_PORT);
-console.log("Database:", process.env.DB_NAME);
-console.log("User:", process.env.DB_USER);
+console.log("Host:", config.database.host);
+console.log("Port:", config.database.port);
+console.log("Database:", config.database.name);
+console.log("User:", config.database.user);
 
 const db = { sequelize, Sequelize };
 

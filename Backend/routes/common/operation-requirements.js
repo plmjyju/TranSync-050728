@@ -2,6 +2,7 @@ import express from "express";
 import db from "../../models/index.js";
 import authenticate from "../../middlewares/authenticate.js";
 import checkPermission from "../../middlewares/checkPermission.js";
+import config from "../../config/environment.js";
 
 const router = express.Router();
 const { OperationRequirement, Package, PackageOperationRequirement, User } = db;
@@ -195,16 +196,9 @@ router.get(
                 "fulfilled_at",
                 "fulfillment_notes",
                 "created_at",
+                "created_by",
               ],
             },
-            include: [
-              {
-                model: User,
-                as: "creator",
-                attributes: ["id", "username", "name"],
-                through: { attributes: [] },
-              },
-            ],
           },
         ],
       });

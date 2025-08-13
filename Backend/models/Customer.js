@@ -10,14 +10,17 @@ export default (sequelize, DataTypes) => {
       customerName: {
         type: DataTypes.STRING(100),
         allowNull: false,
+        field: "customerName", // 明确指定数据库字段名
       },
       companyName: {
         type: DataTypes.STRING(100),
         allowNull: false,
+        field: "companyName", // 明确指定数据库字段名
       },
       contactName: {
         type: DataTypes.STRING(100),
         allowNull: true,
+        field: "contactName", // 明确指定数据库字段名
       },
       telephone: {
         type: DataTypes.STRING(50),
@@ -47,14 +50,17 @@ export default (sequelize, DataTypes) => {
       salesRepId: {
         type: DataTypes.BIGINT,
         allowNull: false,
+        field: "salesRepId", // 明确指定数据库字段名
       },
       serviceRepId: {
         type: DataTypes.BIGINT,
         allowNull: true,
+        field: "serviceRepId", // 明确指定数据库字段名
       },
       accountManagerId: {
         type: DataTypes.BIGINT,
         allowNull: true,
+        field: "accountManagerId", // 明确指定数据库字段名
       },
       created_at: {
         type: DataTypes.DATE,
@@ -72,6 +78,7 @@ export default (sequelize, DataTypes) => {
     {
       tableName: "customers",
       timestamps: false,
+      underscored: false, // 覆盖全局设置，保持原有字段名
     }
   );
 

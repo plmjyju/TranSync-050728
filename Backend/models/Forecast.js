@@ -112,6 +112,17 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         references: { model: "tax_types", key: "id" },
       },
+      requirement_summary_json: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment:
+          "包裹操作需求统计(JSON数组: {requirement_code, requirement_name, count})",
+      },
+      requirement_validation_passed: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        comment: "是否已验证所有包裹具备至少一个操作需求",
+      },
     },
     {
       tableName: "forecasts",

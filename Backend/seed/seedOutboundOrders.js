@@ -1,5 +1,6 @@
 // 出库单种子数据初始化脚本
 import db from "../models/index.js";
+import config from "../config/environment.js";
 
 const { OutboundOrder, OutboundOrderLog } = db;
 
@@ -8,7 +9,7 @@ export const seedOutboundOrders = async () => {
     console.log("开始初始化出库单种子数据...");
 
     // 清空现有数据（开发环境）
-    if (process.env.NODE_ENV === "development") {
+    if (config.server.nodeEnv === "development") {
       await OutboundOrderLog.destroy({ where: {} });
       await OutboundOrder.destroy({ where: {} });
       console.log("已清空现有出库单数据");
