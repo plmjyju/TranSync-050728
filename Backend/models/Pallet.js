@@ -102,6 +102,23 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         comment: "板位或状态最近更新时间",
       },
+      // 软删除字段
+      is_deleted: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        comment: "是否已软删除",
+      },
+      deleted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "软删除时间",
+      },
+      deleted_by: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        references: { model: "users", key: "id" },
+        comment: "软删除操作人",
+      },
 
       // 操作信息
       operator: {
@@ -121,12 +138,36 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         comment: "备注信息",
       },
+      origin_awb: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "若为重组/拆板生成的新板，记录原AWB",
+      },
+      origin_pmc_pallet_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        references: { model: "pallets", key: "id" },
+        comment: "来源PMC板ID (原始航空板)",
+      },
+      source_type: {
+        type: DataTypes.ENUM("original", "repacked", "merged"),
+        allowNull: true,
+        defaultValue: "original",
+        comment: "板来源: 原始/重组(拆板)/合并",
+      },
     },
     {
       tableName: "pallets",
       timestamps: true,
       createdAt: "created_at",
       updatedAt: "updated_at",
+      defaultScope: {
+        where: { is_deleted: false },
+      },
+      scopes: {
+        withDeleted: {},
+        onlyDeleted: { where: { is_deleted: true } },
+      },
       indexes: [
         {
           fields: ["forecast_id"],
@@ -140,6 +181,7 @@ export default (sequelize, DataTypes) => {
         {
           fields: ["is_unpacked"],
         },
+        { fields: ["is_deleted"] },
       ],
     }
   );
@@ -155,6 +197,10 @@ export default (sequelize, DataTypes) => {
     Pallet.belongsTo(models.User, {
       foreignKey: "operator_id",
       as: "operatorUser",
+    });
+    Pallet.belongsTo(models.User, {
+      foreignKey: "deleted_by",
+      as: "deletedByUser",
     });
 
     // 关联包裹（一对多）
@@ -175,6 +221,10 @@ export default (sequelize, DataTypes) => {
       foreignKey: "pallet_id",
       otherKey: "delivery_order_id",
       as: "deliveryOrders",
+    });
+    Pallet.belongsTo(models.Pallet, {
+      foreignKey: "origin_pmc_pallet_id",
+      as: "originPmcPallet",
     });
   };
 

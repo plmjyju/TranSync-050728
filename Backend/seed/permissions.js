@@ -403,4 +403,46 @@ export const permissionsSeed = [
   { name: "log.view", display_name: "查看系统日志", module: "log" },
   { name: "log.export", display_name: "导出日志", module: "log" },
   { name: "log.clear", display_name: "清理日志", module: "log" },
+
+  // ========== 拆板(SplitOrder)权限 ==========
+  {
+    name: "warehouse.split_order.create",
+    display_name: "创建分板单",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.assign",
+    display_name: "指派分板单",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.scan",
+    display_name: "扫描分板包裹",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.pallet_full",
+    display_name: "标记临时板满板",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.view",
+    display_name: "查看分板进度",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.verify",
+    display_name: "校验分板结果",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.finalize",
+    display_name: "确认生成新板",
+    module: "warehouse",
+  },
+  {
+    name: "warehouse.split_order.cancel",
+    display_name: "取消分板单",
+    module: "warehouse",
+  },
 ];

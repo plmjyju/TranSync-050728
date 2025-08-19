@@ -52,6 +52,17 @@ export default (sequelize, DataTypes) => {
         defaultValue: false,
         comment: "是否已验证所有包裹具备至少一个操作需求",
       },
+      // 新增完成记录字段
+      completed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "全部包裹接收完成时间",
+      },
+      completed_by: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: "完成操作的代理用户ID",
+      },
     },
     {
       tableName: "inbonds",

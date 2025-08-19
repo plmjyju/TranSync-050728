@@ -1,5 +1,49 @@
 import db from "../models/index.js";
+import { getRedis } from "../utils/redisClient.js";
 const { Role, Permission } = db;
+
+async function getRolePermissionsCached(roleId) {
+  const cacheKey = `perm:role:${roleId}`;
+  try {
+    const r = await getRedis();
+    const cached = await r.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+    const role = await Role.findByPk(roleId, {
+      include: [{ model: Permission, as: "permissions" }],
+    });
+    if (!role) return null;
+    const perms = role.permissions.map((p) => p.name);
+    await r.set(
+      cacheKey,
+      JSON.stringify({
+        roleName: role.name,
+        displayName: role.display_name || role.name,
+        permissions: perms,
+        super: perms.includes("*") || role.name === "super_admin",
+      }),
+      { EX: 300 } // 5 min TTL
+    );
+    return {
+      roleName: role.name,
+      displayName: role.display_name || role.name,
+      permissions: perms,
+      super: perms.includes("*") || role.name === "super_admin",
+    };
+  } catch (e) {
+    // fallback to db without cache
+    const role = await Role.findByPk(roleId, {
+      include: [{ model: Permission, as: "permissions" }],
+    });
+    if (!role) return null;
+    const perms = role.permissions.map((p) => p.name);
+    return {
+      roleName: role.name,
+      displayName: role.display_name || role.name,
+      permissions: perms,
+      super: perms.includes("*") || role.name === "super_admin",
+    };
+  }
+}
 
 const checkPermission = (permissionName) => {
   return async (req, res, next) => {
@@ -55,7 +99,7 @@ const checkPermission = (permissionName) => {
         }
       }
 
-      // 其他用户类型需要检查数据库权限
+      // 其他用户类型需要检查缓存/数据库权限
       if (!user.role_id) {
         return res.status(403).json({
           success: false,
@@ -64,47 +108,30 @@ const checkPermission = (permissionName) => {
         });
       }
 
-      const role = await Role.findByPk(user.role_id, {
-        include: [{ model: Permission, as: "permissions" }],
-      });
-
-      if (!role) {
+      const cached = await getRolePermissionsCached(user.role_id);
+      if (!cached) {
         return res.status(403).json({
           success: false,
           message: "用户角色不存在",
           error_code: "ROLE_NOT_FOUND",
         });
       }
-
-      // 检查是否有超级管理员权限（拥有所有权限）
-      const isSuperAdmin = role.permissions.some(
-        (p) => p.name === "*" || role.name === "super_admin"
-      );
-
-      if (isSuperAdmin) {
+      if (cached.super || cached.permissions.includes(permissionName)) {
+        req.userRole = {
+          name: cached.roleName,
+          display_name: cached.displayName,
+        };
+        req.userPermissions = cached.permissions;
         return next();
       }
 
-      // 检查具体权限
-      const hasPermission = role.permissions.some(
-        (p) => p.name === permissionName
-      );
-
-      if (!hasPermission) {
-        return res.status(403).json({
-          success: false,
-          message: `权限不足：需要'${permissionName}'权限`,
-          error_code: "PERMISSION_DENIED",
-          user_role: role.display_name,
-          required_permission: permissionName,
-        });
-      }
-
-      // 权限检查通过，添加权限信息到请求对象
-      req.userRole = role;
-      req.userPermissions = role.permissions.map((p) => p.name);
-
-      next();
+      return res.status(403).json({
+        success: false,
+        message: `权限不足：需要'${permissionName}'权限`,
+        error_code: "PERMISSION_DENIED",
+        user_role: cached.displayName,
+        required_permission: permissionName,
+      });
     } catch (error) {
       console.error("权限检查错误:", error);
       return res.status(500).json({

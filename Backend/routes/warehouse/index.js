@@ -10,6 +10,7 @@ import palletAllocationRouter from "./pallet-allocation.js";
 import warehouseLocationRouter from "./warehouse-location.js";
 import simplePalletAllocationRouter from "./simple-pallet-allocation.js";
 import outboundOrderRouter from "./outbound-orders.js";
+import splitOrdersRouter from "./splitOrders.js";
 
 const router = express.Router();
 
@@ -25,5 +26,6 @@ router.use("/pallet-allocations", palletAllocationRouter);
 router.use("/warehouse-locations", warehouseLocationRouter);
 router.use("/simple-allocation", simplePalletAllocationRouter);
 router.use("/outbound-orders", outboundOrderRouter);
+router.use("/split-orders", splitOrdersRouter);
 
 export default router;

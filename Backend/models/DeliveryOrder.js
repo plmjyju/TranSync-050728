@@ -16,9 +16,11 @@ export default (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(
           "pending", // 待提货
-          "picked_up", // 已提货
-          "in_transit", // 运输中
-          "arrived", // 已到达仓库
+          "picked_up", // 已开始提货(无板或未扫描)
+          "partial_picked", // 新增：部分板已提
+          "in_transit", // 运输中(全部已提走)
+          "partial_arrived", // 新增：部分板到仓
+          "arrived", // 全部板到仓
           "delivered", // 已交付/入库完成
           "cancelled", // 已取消
           "allocated", // 已分配待确认
@@ -45,6 +47,27 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         defaultValue: 0,
         comment: "已提取包裹数量",
+      },
+      // 新增: 板统计
+      planned_pallet_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: "计划板数",
+      },
+      picked_pallet_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: "已提取板数",
+      },
+      inbound_pallet_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: "已到仓(入库)板数",
+      },
+      inbound_package_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: "已到仓(入库)包裹数",
       },
 
       // 司机信息
@@ -109,54 +132,43 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         comment: "入库完成时间",
       },
-
-      // 运输信息
-      target_warehouse: {
-        type: DataTypes.STRING(100),
+      // 结算 / 签收相关
+      settlement_state: {
+        type: DataTypes.ENUM(
+          "pending",
+          "awaiting_proof",
+          "proof_uploaded",
+          "settled"
+        ),
+        defaultValue: "pending",
+        comment:
+          "结算状态: pending(流程中) / awaiting_proof(待上传签字DO) / proof_uploaded(已上传待审核) / settled(审核结算完成)",
+      },
+      signed_do_url: {
+        type: DataTypes.STRING(255),
         allowNull: true,
-        comment: "目标仓库",
+        comment: "签字DO扫描件或图片URL",
       },
-      transport_distance: {
-        type: DataTypes.DECIMAL(8, 2),
+      driver_signature_image_url: {
+        type: DataTypes.STRING(255),
         allowNull: true,
-        comment: "运输距离（公里）",
+        comment: "司机签名图片URL",
       },
-      current_location: {
-        type: DataTypes.STRING(200),
-        allowNull: true,
-        comment: "当前位置",
-      },
-      latitude: {
-        type: DataTypes.DECIMAL(10, 8),
-        allowNull: true,
-        comment: "当前纬度",
-      },
-      longitude: {
-        type: DataTypes.DECIMAL(11, 8),
-        allowNull: true,
-        comment: "当前经度",
-      },
-
-      // 仓库确认信息
-      warehouse_confirmed: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: "是否已仓库确认",
-      },
-      warehouse_confirm_time: {
+      settlement_proof_uploaded_at: {
         type: DataTypes.DATE,
         allowNull: true,
-        comment: "仓库确认时间",
+        comment: "签字DO上传时间",
       },
-      confirmed_pallet_count: {
-        type: DataTypes.INTEGER,
+      settlement_confirmed_by: {
+        type: DataTypes.BIGINT,
         allowNull: true,
-        comment: "仓库确认的实际板数",
+        references: { model: "users", key: "id" },
+        comment: "结算确认人",
       },
-      confirmed_package_count: {
-        type: DataTypes.INTEGER,
+      settlement_confirmed_at: {
+        type: DataTypes.DATE,
         allowNull: true,
-        comment: "仓库确认的实际箱数",
+        comment: "结算确认时间",
       },
 
       // 操作信息
@@ -197,6 +209,7 @@ export default (sequelize, DataTypes) => {
         {
           fields: ["status"],
         },
+        { fields: ["settlement_state"] },
         {
           fields: ["created_by"],
         },

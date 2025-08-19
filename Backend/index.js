@@ -1,5 +1,7 @@
 import express from "express";
 import config from "./config/environment.js";
+import { startAuditRedisConsumer } from "./utils/auditQueue.js";
+import { getRedis } from "./utils/redisClient.js";
 
 // 打印环境配置信息
 config.printDebugInfo();
@@ -46,6 +48,16 @@ await createClientAppRouter(app, "wms");
 await createClientAppRouter(app, "warehouse");
 await createClientAppRouter(app, "agent");
 await createClientAppRouter(app, "client");
+
+(async () => {
+  try {
+    await getRedis();
+    console.log("Redis connected");
+    startAuditRedisConsumer();
+  } catch (e) {
+    console.warn("Redis not available, using fallback queue", e.message);
+  }
+})();
 
 app.listen(config.server.port, () => {
   console.log(`🚀 服务器运行在 http://localhost:${config.server.port}`);

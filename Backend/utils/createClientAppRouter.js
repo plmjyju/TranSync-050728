@@ -47,6 +47,14 @@ export const createClientAppRouter = async (app, clientType) => {
         checkPermission(accessPermission), // 启用端口访问权限检查
         router
       );
+
+      // 附加 OMP 专属监控路由
+      if (clientType === "omp") {
+        const { default: auditDeadLetterRoutes } = await import(
+          "../routes/omp/auditDeadLetter.js"
+        );
+        app.use(prefix, auditDeadLetterRoutes);
+      }
     }
 
     console.log(`✅ ${clientType.toUpperCase()} 路由挂载完成 → ${prefix}`);

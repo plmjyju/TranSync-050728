@@ -39,9 +39,12 @@ export default (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(
           "draft", // 草稿
+          "palletizing", // 新增：打板中
           "booked", // 已预订
           "in_transit", // 运输中
-          "arrived" // 已到达
+          "arrived", // 已到达
+          "completed", // 新增：流程完成（可选终态）
+          "cancelled" // 已取消
         ),
         defaultValue: "draft",
         comment: "主要业务状态",
@@ -123,6 +126,15 @@ export default (sequelize, DataTypes) => {
         defaultValue: false,
         comment: "是否已验证所有包裹具备至少一个操作需求",
       },
+
+      // 新增生命周期时间戳
+      palletizing_started_at: { type: DataTypes.DATE },
+      booked_at: { type: DataTypes.DATE },
+      completed_at: { type: DataTypes.DATE },
+      // 打板进度
+      total_pallets: { type: DataTypes.INTEGER, defaultValue: 0 },
+      palletized_packages: { type: DataTypes.INTEGER, defaultValue: 0 },
+      palletization_completed: { type: DataTypes.BOOLEAN, defaultValue: false },
     },
     {
       tableName: "forecasts",

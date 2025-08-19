@@ -1,69 +1,19 @@
 import express from "express";
 import db from "../../models/index.js";
-import { authenticate } from "../../middlewares/authenticate.js";
+import authenticate from "../../middlewares/authenticate.js"; // 统一默认导出
 import { checkPermission } from "../../middlewares/checkPermission.js";
 import moment from "moment-timezone";
+import {
+  writeAudit,
+  pickSnapshot,
+  INBOND_AUDIT_FIELDS,
+  withAuditTransaction,
+} from "../../utils/auditHelper.js";
+import { logRead, logViewDetail } from "../../utils/logRead.js";
+import { buildError, ERROR_CODES } from "../../utils/errors.js";
+import { generateInbondCodeAtomic } from "../../utils/sequence.js";
 
 const router = express.Router();
-
-// Helper function to convert number to base36 format
-const toBase36 = (num) => {
-  if (num < 1) return "0A";
-  const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  let result = "";
-  num = num - 1; // Convert to 0-based indexing
-
-  do {
-    result = chars[num % 36] + result;
-    num = Math.floor(num / 36);
-  } while (num > 0);
-
-  return result.padStart(2, "0");
-};
-
-// Helper function to generate inbond code
-const generateInbondCode = async (agentId, customerId) => {
-  try {
-    // Get agent info
-    const agent = await db.User.findByPk(agentId);
-    if (!agent) throw new Error("Agent not found");
-
-    // Get customer info
-    const customer = await db.Customer.findByPk(customerId);
-    if (!customer) throw new Error("Customer not found");
-
-    // Generate agent code (base36)
-    const agentCode = toBase36(agentId);
-
-    // Generate customer code (3 digits)
-    const customerCode = customerId.toString().padStart(3, "0");
-
-    // Generate date code (YYMMDD)
-    const today = new Date();
-    const dateCode = today.toISOString().slice(2, 10).replace(/-/g, "");
-
-    // Count today's inbonds for this customer
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
-
-    const todayCount = await db.Inbond.count({
-      where: {
-        client_id: customerId,
-        created_at: {
-          [db.Sequelize.Op.between]: [startOfDay, endOfDay],
-        },
-      },
-    });
-
-    // Generate sequence letter (A=1, B=2, etc.)
-    const sequenceChar = String.fromCharCode(65 + todayCount); // A=65 in ASCII
-
-    return `IB${agentCode}${customerCode}-${dateCode}${sequenceChar}`;
-  } catch (error) {
-    console.error("Error generating inbond code:", error);
-    throw error;
-  }
-};
 
 // Create a new inbond (draft)
 router.post(
@@ -81,12 +31,15 @@ router.post(
         arrival_method,
         remark,
       } = req.body;
-
-      if (!agentId) {
-        return res.status(400).json({ error: "Agent ID not found in token" });
-      }
-
-      // Validate clearance_type
+      if (!agentId)
+        return res
+          .status(400)
+          .json(
+            buildError(
+              ERROR_CODES.INBOND_AGENT_ID_MISSING,
+              "Agent ID not found in token"
+            )
+          );
       const validClearanceTypes = [
         "general_trade",
         "bonded_warehouse",
@@ -97,48 +50,73 @@ router.post(
         "duty_free",
         "re_import",
       ];
+      if (!validClearanceTypes.includes(clearance_type))
+        return res
+          .status(400)
+          .json(
+            buildError(
+              ERROR_CODES.INBOND_CLEARANCE_TYPE_INVALID,
+              "Invalid clearance type",
+              { valid_types: validClearanceTypes }
+            )
+          );
+      if (!["air", "sea"].includes(shipping_type))
+        return res
+          .status(400)
+          .json(
+            buildError(
+              ERROR_CODES.INBOND_SHIPPING_TYPE_INVALID,
+              "Invalid shipping type. Must be 'air' or 'sea'"
+            )
+          );
 
-      if (!validClearanceTypes.includes(clearance_type)) {
-        return res.status(400).json({
-          error: "Invalid clearance type",
-          valid_types: validClearanceTypes,
-        });
-      }
-
-      // Validate shipping_type
-      if (!["air", "sea"].includes(shipping_type)) {
-        return res.status(400).json({
-          error: "Invalid shipping type. Must be 'air' or 'sea'",
-        });
-      }
-
-      // Validate tax_type_id if provided
       let validatedTaxTypeId = null;
       if (tax_type_id) {
         const taxType = await db.TaxType.findByPk(tax_type_id);
-        if (!taxType) {
-          return res.status(400).json({
-            error: `Invalid tax_type_id: ${tax_type_id}. Tax type not found.`,
-          });
-        }
+        if (!taxType)
+          return res
+            .status(400)
+            .json(
+              buildError(
+                ERROR_CODES.INBOND_TAX_TYPE_INVALID,
+                `Invalid tax_type_id: ${tax_type_id}.`
+              )
+            );
         validatedTaxTypeId = tax_type_id;
       }
-
-      // Generate inbond code
-      const inbondCode = await generateInbondCode(agentId, customerId);
-
-      // Create draft inbond
-      const inbond = await db.Inbond.create({
-        inbond_code: inbondCode,
-        client_id: customerId,
-        shipping_type,
-        clearance_type,
-        tax_type_id: validatedTaxTypeId,
-        arrival_method: arrival_method || null,
-        status: "draft",
-        remark: remark || null,
-      });
-
+      const inbondCode = await generateInbondCodeAtomic(agentId, customerId);
+      const auditList = [];
+      const inbond = await withAuditTransaction(
+        db.sequelize,
+        async (t, audits) => {
+          const created = await db.Inbond.create(
+            {
+              inbond_code: inbondCode,
+              client_id: customerId,
+              shipping_type,
+              clearance_type,
+              tax_type_id: validatedTaxTypeId,
+              arrival_method: arrival_method || null,
+              status: "draft",
+              remark: remark || null,
+            },
+            { transaction: t }
+          );
+          audits.push({
+            module: "client",
+            entityType: "Inbond",
+            entityId: created.id,
+            action: "create",
+            user: req.user,
+            before: null,
+            after: pickSnapshot(created, INBOND_AUDIT_FIELDS),
+            ip: req.ip,
+            ua: req.headers["user-agent"],
+          });
+          return created;
+        },
+        auditList
+      );
       return res.status(201).json({
         message: "Inbond created successfully",
         inbond: {
@@ -153,7 +131,14 @@ router.post(
       });
     } catch (err) {
       console.error("Error creating inbond:", err);
-      return res.status(500).json({ error: "Failed to create inbond" });
+      return res
+        .status(500)
+        .json(
+          buildError(
+            ERROR_CODES.INBOND_CREATE_FAILED,
+            "Failed to create inbond"
+          )
+        );
     }
   }
 );
@@ -164,6 +149,7 @@ router.get(
   authenticate,
   checkPermission("client.inbond.view"),
   async (req, res) => {
+    const startAt = Date.now();
     try {
       const customerId = req.user.id;
       const {
@@ -253,7 +239,7 @@ router.get(
         ],
       });
 
-      return res.status(200).json({
+      const response = {
         message: "Inbonds retrieved successfully",
         inbonds: rows,
         pagination: {
@@ -269,6 +255,14 @@ router.get(
           dateField: dateField,
           timezone: validTimezone,
         },
+      };
+      res.status(200).json(response);
+      logRead(req, {
+        entityType: "Inbond",
+        page: parseInt(page),
+        pageSize: parseInt(limit),
+        resultCount: rows.length,
+        startAt,
       });
     } catch (err) {
       console.error("Error fetching inbonds:", err);
@@ -283,6 +277,7 @@ router.get(
   authenticate,
   checkPermission("client.inbond.view"),
   async (req, res) => {
+    const startAt = Date.now();
     try {
       const customerId = req.user.id;
       const { id } = req.params;
@@ -303,6 +298,14 @@ router.get(
               "status",
               "split_action",
               "remark",
+              "operation_requirement_id",
+            ],
+            include: [
+              {
+                model: db.OperationRequirement,
+                as: "operationRequirement",
+                attributes: ["id", "requirement_code", "requirement_name"],
+              },
             ],
           },
         ],
@@ -312,9 +315,14 @@ router.get(
         return res.status(404).json({ error: "Inbond not found" });
       }
 
-      return res.status(200).json({
-        message: "Inbond retrieved successfully",
-        inbond,
+      res
+        .status(200)
+        .json({ message: "Inbond retrieved successfully", inbond });
+      logViewDetail(req, {
+        entityType: "Inbond",
+        entityId: inbond.id,
+        startAt,
+        resultExists: true,
       });
     } catch (err) {
       console.error("Error fetching inbond:", err);
@@ -339,18 +347,19 @@ router.put(
         tax_type_id,
         remark,
       } = req.body;
-
       const inbond = await db.Inbond.findOne({
         where: { id, client_id: customerId, status: "draft" },
       });
-
-      if (!inbond) {
-        return res.status(404).json({
-          error: "Inbond not found or cannot be modified",
-        });
-      }
-
-      // Validate clearance_type if provided
+      if (!inbond)
+        return res
+          .status(404)
+          .json(
+            buildError(
+              ERROR_CODES.INBOND_NOT_MODIFIABLE,
+              "Inbond not found or cannot be modified"
+            )
+          );
+      const beforeSnap = pickSnapshot(inbond, INBOND_AUDIT_FIELDS);
       if (clearance_type) {
         const validClearanceTypes = [
           "general_trade",
@@ -362,31 +371,44 @@ router.put(
           "duty_free",
           "re_import",
         ];
-
-        if (!validClearanceTypes.includes(clearance_type)) {
-          return res.status(400).json({
-            error: "Invalid clearance type",
-            valid_types: validClearanceTypes,
-          });
-        }
+        if (!validClearanceTypes.includes(clearance_type))
+          return res
+            .status(400)
+            .json(
+              buildError(
+                ERROR_CODES.INBOND_CLEARANCE_TYPE_INVALID,
+                "Invalid clearance type",
+                { valid_types: validClearanceTypes }
+              )
+            );
       }
-
-      // Validate shipping_type if provided
-      if (shipping_type && !["air", "sea"].includes(shipping_type)) {
-        return res.status(400).json({
-          error: "Invalid shipping type. Must be 'air' or 'sea'",
-        });
-      }
-
-      // Update fields
+      if (shipping_type && !["air", "sea"].includes(shipping_type))
+        return res
+          .status(400)
+          .json(
+            buildError(
+              ERROR_CODES.INBOND_SHIPPING_TYPE_INVALID,
+              "Invalid shipping type. Must be 'air' or 'sea'"
+            )
+          );
       if (shipping_type) inbond.shipping_type = shipping_type;
       if (arrival_method) inbond.arrival_method = arrival_method;
       if (clearance_type) inbond.clearance_type = clearance_type;
       if (tax_type_id !== undefined) inbond.tax_type_id = tax_type_id;
       if (remark !== undefined) inbond.remark = remark;
-
       await inbond.save();
-
+      const afterSnap = pickSnapshot(inbond, INBOND_AUDIT_FIELDS);
+      writeAudit({
+        module: "client",
+        entityType: "Inbond",
+        entityId: inbond.id,
+        action: "update",
+        user: req.user,
+        before: beforeSnap,
+        after: afterSnap,
+        ip: req.ip,
+        ua: req.headers["user-agent"],
+      });
       return res.status(200).json({
         message: "Inbond updated successfully",
         inbond: {
@@ -403,112 +425,119 @@ router.put(
       });
     } catch (err) {
       console.error("Error updating inbond:", err);
-      return res.status(500).json({ error: "Failed to update inbond" });
+      return res
+        .status(500)
+        .json(
+          buildError(
+            ERROR_CODES.INBOND_UPDATE_FAILED,
+            "Failed to update inbond"
+          )
+        );
     }
   }
 );
 
-// 提交 inbond (校验所有关联包裹都至少有一个 OperationRequirement, 汇总统计并写入 summary)
+// 提交 inbond
 router.post(
   "/inbond/:id/submit",
   authenticate,
   checkPermission("client.inbond.update"),
   async (req, res) => {
-    const t = await db.sequelize.transaction();
+    const auditRecords = [];
     try {
       const customerId = req.user.id;
       const { id } = req.params;
-
-      const inbond = await db.Inbond.findOne({
-        where: { id, client_id: customerId },
-        transaction: t,
-      });
-      if (!inbond) {
-        await t.rollback();
-        return res
-          .status(404)
-          .json({ success: false, message: "Inbond不存在" });
-      }
-      if (inbond.status !== "draft") {
-        await t.rollback();
-        return res
-          .status(400)
-          .json({ success: false, message: "仅草稿状态可提交" });
-      }
-
-      // 取关联包裹及其需求
-      const packages = await db.Package.findAll({
-        where: { inbond_id: id, client_id: customerId },
-        include: [
-          {
-            model: db.OperationRequirement,
-            as: "operationRequirements",
-            through: { attributes: [] },
-            attributes: ["id", "requirement_code", "requirement_name"],
-          },
-        ],
-        transaction: t,
-      });
-
-      if (packages.length === 0) {
-        await t.rollback();
-        return res
-          .status(400)
-          .json({ success: false, message: "无关联包裹，不能提交" });
-      }
-
-      // 校验每个包裹至少一个需求
-      const invalidPkgs = packages.filter(
-        (p) => !p.operationRequirements || p.operationRequirements.length === 0
-      );
-      if (invalidPkgs.length > 0) {
-        await t.rollback();
-        return res.status(400).json({
-          success: false,
-          message: "存在未分配操作需求的包裹",
-          invalid_package_ids: invalidPkgs.map((p) => p.id),
-        });
-      }
-
-      // 汇总统计
-      const aggMap = new Map();
-      for (const pkg of packages) {
-        for (const reqObj of pkg.operationRequirements) {
-          const key = reqObj.requirement_code;
-          if (!aggMap.has(key)) {
-            aggMap.set(key, {
-              requirement_code: key,
-              requirement_name: reqObj.requirement_name,
-              count: 0,
-            });
+      const result = await withAuditTransaction(
+        db.sequelize,
+        async (t, audits) => {
+          const inbond = await db.Inbond.findOne({
+            where: { id, client_id: customerId },
+            transaction: t,
+          });
+          if (!inbond)
+            throw buildError(ERROR_CODES.INBOND_NOT_FOUND, "Inbond不存在");
+          if (inbond.status !== "draft")
+            throw buildError(ERROR_CODES.INBOND_NOT_DRAFT, "仅草稿状态可提交");
+          const packages = await db.Package.findAll({
+            where: { inbond_id: id, client_id: customerId },
+            include: [
+              {
+                model: db.OperationRequirement,
+                as: "operationRequirement",
+                attributes: ["id", "requirement_code", "requirement_name"],
+              },
+            ],
+            transaction: t,
+          });
+          if (packages.length === 0)
+            throw buildError(
+              ERROR_CODES.INBOND_NO_PACKAGES,
+              "无关联包裹，不能提交"
+            );
+          const invalidPkgs = packages.filter(
+            (p) => !p.operation_requirement_id
+          );
+          if (invalidPkgs.length > 0)
+            throw buildError(
+              ERROR_CODES.INBOND_PACKAGE_MISSING_REQUIREMENT,
+              "存在未分配操作需求的包裹",
+              { invalid_package_ids: invalidPkgs.map((p) => p.id) }
+            );
+          const beforeSnap = pickSnapshot(inbond, INBOND_AUDIT_FIELDS);
+          const aggMap = new Map();
+          for (const pkg of packages) {
+            const reqObj = pkg.operationRequirement;
+            if (!reqObj) continue;
+            const key = reqObj.requirement_code;
+            if (!aggMap.has(key)) {
+              aggMap.set(key, {
+                requirement_code: key,
+                requirement_name: reqObj.requirement_name,
+                count: 0,
+              });
+            }
+            aggMap.get(key).count += 1;
           }
-          aggMap.get(key).count += 1;
-        }
-      }
-      const summaryArray = Array.from(aggMap.values()).sort((a, b) =>
-        a.requirement_code.localeCompare(b.requirement_code)
-      );
-
-      await inbond.update(
-        {
-          status: "submitted",
-          requirement_summary_json: JSON.stringify(summaryArray),
-          requirement_validation_passed: true,
+          const summaryArray = Array.from(aggMap.values()).sort((a, b) =>
+            a.requirement_code.localeCompare(b.requirement_code)
+          );
+          await inbond.update(
+            {
+              status: "submitted",
+              requirement_summary_json: JSON.stringify(summaryArray),
+              requirement_validation_passed: true,
+            },
+            { transaction: t }
+          );
+          const afterSnap = pickSnapshot(inbond, INBOND_AUDIT_FIELDS);
+          audits.push({
+            module: "client",
+            entityType: "Inbond",
+            entityId: inbond.id,
+            action: "submit",
+            user: req.user,
+            before: beforeSnap,
+            after: afterSnap,
+            extra: { requirement_summary: summaryArray },
+            ip: req.ip,
+            ua: req.headers["user-agent"],
+          });
+          return { inbond, summaryArray };
         },
-        { transaction: t }
+        auditRecords
       );
-
-      await t.commit();
       return res.json({
         success: true,
         message: "提交成功",
-        inbond_id: inbond.id,
-        requirement_summary: summaryArray,
+        inbond_id: result.inbond.id,
+        requirement_summary: result.summaryArray,
       });
     } catch (e) {
-      await t.rollback();
+      if (e && e.code) return res.status(400).json(e);
       console.error(e);
-      return res.status(500).json({ success: false, message: "提交失败" });
+      return res
+        .status(500)
+        .json(buildError(ERROR_CODES.INBOND_SUBMIT_FAILED, "提交失败"));
     }
   }
 );

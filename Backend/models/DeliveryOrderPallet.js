@@ -17,6 +17,11 @@ export default (sequelize, DataTypes) => {
         references: { model: "pallets", key: "id" },
         comment: "板ID",
       },
+      awb: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: "关联运单(冗余用于混装)",
+      },
 
       // 冗余字段，方便查询
       forecast_id: {
@@ -38,6 +43,15 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         comment: "备注",
       },
+
+      // 提货状态（分板维度）
+      pickup_status: {
+        type: DataTypes.ENUM("planned", "partial", "picked", "cancelled"),
+        defaultValue: "planned",
+        comment: "板提货状态",
+      },
+      picked_package_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+      total_package_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     },
     {
       tableName: "delivery_order_pallets",
