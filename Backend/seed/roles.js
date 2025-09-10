@@ -84,7 +84,12 @@ export const rolesSeed = [
       "agent.hawb.edit",
       "agent.hawb.delete",
       "agent.hawb.assign",
+      // 新增 - 与路由匹配
+      "agent.package.receive",
+      "agent.inbond.view",
+      "agent.inbond.arrive",
       "customer.view",
+      "customer.edit",
       "report.forecast",
       "report.package",
     ],
@@ -108,6 +113,10 @@ export const rolesSeed = [
       "agent.hawb.create",
       "agent.hawb.edit",
       "agent.hawb.assign",
+      // 新增 - 与路由匹配
+      "agent.package.receive",
+      "agent.inbond.view",
+      "agent.inbond.arrive",
     ],
   },
 
@@ -249,6 +258,18 @@ export const rolesSeed = [
       "client.statistics.view",
       "client.invoice.view",
       "client.invoice.download",
+      // 新增 - 与 routes/client/* 匹配
+      "client.inbond.view",
+      "client.inbond.create",
+      "client.inbond.update",
+      "client.package.create",
+      "client.package.update",
+      "client.package.delete",
+      "client.package.item.add",
+      "client.package.item.view",
+      // 新增: 允许更新/删除包裹子件
+      "client.package.item.update",
+      "client.package.item.delete",
     ],
   },
   {
@@ -263,6 +284,18 @@ export const rolesSeed = [
       "client.package.track",
       "client.statistics.view",
       "client.invoice.view",
+      // 新增 - 与 routes/client/* 匹配（标准用户也允许完整建单流程）
+      "client.inbond.view",
+      "client.inbond.create",
+      "client.inbond.update",
+      "client.package.create",
+      "client.package.update",
+      "client.package.delete",
+      "client.package.item.add",
+      "client.package.item.view",
+      // 新增: 允许更新/删除包裹子件
+      "client.package.item.update",
+      "client.package.item.delete",
     ],
   },
 
@@ -329,4 +362,9 @@ export const generateRolePermissionsSeed = async (roles, permissions) => {
   }
 
   return rolePermissions;
+};
+
+export {
+  rolesSeed as defaultRolesSeed,
+  generateRolePermissionsSeed as rolePermsGenerator,
 };

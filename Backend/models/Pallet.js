@@ -155,6 +155,12 @@ export default (sequelize, DataTypes) => {
         defaultValue: "original",
         comment: "板来源: 原始/重组(拆板)/合并",
       },
+      warehouse_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: "仓库ID",
+      },
+      tenant_id: { type: DataTypes.BIGINT, allowNull: true, comment: "租户ID" },
     },
     {
       tableName: "pallets",
@@ -182,6 +188,12 @@ export default (sequelize, DataTypes) => {
           fields: ["is_unpacked"],
         },
         { fields: ["is_deleted"] },
+        { fields: ["tenant_id"] },
+        { fields: ["warehouse_id"] },
+        {
+          fields: ["tenant_id", "warehouse_id", "status"],
+          name: "idx_pallet_tenant_wh_status",
+        },
       ],
     }
   );

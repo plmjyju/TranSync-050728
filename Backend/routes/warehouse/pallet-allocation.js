@@ -491,15 +491,15 @@ router.get(
             include: [
               {
                 model: OperationRequirement,
-                as: "operationRequirements",
+                as: "operationRequirement", // updated to single relation
                 attributes: [
                   "id",
                   "requirement_code",
                   "requirement_name",
-                  "category",
-                  "priority_level",
+                  "handling_mode",
+                  "carrier",
+                  "label_abbr",
                 ],
-                through: { attributes: ["additional_notes", "status"] },
               },
             ],
           },

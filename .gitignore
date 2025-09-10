@@ -1,5 +1,7 @@
 # Node.js dependencies
 node_modules/
+frontend/node_modules/
+frontend-client/node_modules/
 
 # Logs
 logs/
@@ -20,8 +22,10 @@ yarn-error.log*
 Thumbs.db
 
 # Build files
-dist/
-coverage/
+Backend/dist/
+Backend/coverage/
+frontend/dist/
+frontend-client/dist/
 
 # Temporary files
 *.tmp

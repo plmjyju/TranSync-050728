@@ -41,6 +41,7 @@ export default (sequelize, DataTypes) => {
         { fields: ["operation_requirement_id"] },
         {
           unique: true,
+          name: "uq_split_req_stat",
           fields: ["split_order_id", "operation_requirement_id"],
         },
       ],

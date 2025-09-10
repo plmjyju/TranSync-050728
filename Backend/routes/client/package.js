@@ -74,6 +74,27 @@ router.post(
           error: `无效的 operation_requirement_code: ${operation_requirement_code}`,
         });
       }
+      // 新增：校验用户可选的操作需求
+      const allow = await db.UserOperationRequirement.findOne({
+        where: {
+          user_id: customerId,
+          operation_requirement_id: opReq.id,
+          is_selectable: true,
+          is_enabled: true,
+        },
+        transaction: t,
+      });
+      if (!allow) {
+        await t.rollback();
+        return res
+          .status(403)
+          .json(
+            buildError(
+              "PKG_REQUIREMENT_NOT_ALLOWED",
+              "当前用户不可选择该操作需求"
+            )
+          );
+      }
 
       const package_code = await generateSequentialPackageCode(
         inbondId,
@@ -189,6 +210,37 @@ router.post(
       const reqMap = Object.fromEntries(
         opReqs.map((r) => [r.requirement_code, r])
       );
+      // 新增：一次性校验用户允许的 requirement 集合
+      const reqIds = opReqs.map((r) => r.id);
+      const allowedRows = await db.UserOperationRequirement.findAll({
+        where: {
+          user_id: customerId,
+          operation_requirement_id: reqIds,
+          is_selectable: true,
+          is_enabled: true,
+        },
+        transaction: t,
+      });
+      const allowedSet = new Set(
+        allowedRows.map((a) => a.operation_requirement_id)
+      );
+      const notAllowedCodes = [];
+      for (const c of codeSet) {
+        const r = reqMap[c];
+        if (!r || !allowedSet.has(r.id)) notAllowedCodes.push(c);
+      }
+      if (notAllowedCodes.length > 0) {
+        await t.rollback();
+        return res
+          .status(403)
+          .json(
+            buildError(
+              "PKG_REQUIREMENT_NOT_ALLOWED",
+              "存在当前用户不可选择的操作需求",
+              { not_allowed: notAllowedCodes }
+            )
+          );
+      }
 
       const existingCount = await db.Package.count({
         where: { inbond_id: inbondId },
@@ -202,6 +254,7 @@ router.post(
         const seq = seqBase.toString().padStart(3, "0");
         const package_code = `${inbond.inbond_code}-${seq}`;
         const opReq = reqMap[p.operation_requirement_code];
+        // opReq 必然允许（前面已整体校验）
         const pkg = await db.Package.create(
           {
             package_code,
@@ -349,6 +402,27 @@ router.put(
             .status(400)
             .json({ error: "无效的 operation_requirement_code" });
         }
+        // 新增：校验用户可选性
+        const allow = await db.UserOperationRequirement.findOne({
+          where: {
+            user_id: customerId,
+            operation_requirement_id: opReq.id,
+            is_selectable: true,
+            is_enabled: true,
+          },
+          transaction: t,
+        });
+        if (!allow) {
+          await t.rollback();
+          return res
+            .status(403)
+            .json(
+              buildError(
+                "PKG_REQUIREMENT_NOT_ALLOWED",
+                "当前用户不可选择该操作需求"
+              )
+            );
+        }
         pkg.operation_requirement_id = opReq.id;
       }
       await pkg.save({ transaction: t });
@@ -423,6 +497,24 @@ router.put(
             });
             if (!opReq) {
               errors.push({ index: i, id: p.id, error: "需求代码无效" });
+              continue;
+            }
+            // 新增：校验用户可选性
+            const allow = await db.UserOperationRequirement.findOne({
+              where: {
+                user_id: customerId,
+                operation_requirement_id: opReq.id,
+                is_selectable: true,
+                is_enabled: true,
+              },
+              transaction: t,
+            });
+            if (!allow) {
+              errors.push({
+                index: i,
+                id: p.id,
+                error: "该操作需求对当前用户不可选",
+              });
               continue;
             }
             pkg.operation_requirement_id = opReq.id;
@@ -634,6 +726,7 @@ router.post(
           hs_code: item.hs_code,
           product_name_en: item.product_name_en,
           product_description: item.product_description,
+          material: item.material,
           origin_country: item.origin_country,
           url: item.url,
           unit_price: item.unit_price ? parseFloat(item.unit_price) : null,
@@ -664,6 +757,110 @@ router.post(
       await t.rollback();
       console.error(e);
       return res.status(500).json({ error: "添加明细失败" });
+    }
+  }
+);
+
+// 从模板批量导入包裹明细
+router.post(
+  "/package/:packageCode/add-items-from-templates",
+  authenticate,
+  checkPermission("client.package.item.add"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const { packageCode } = req.params;
+      const { template_ids } = req.body || {};
+      const clientId = req.user.id;
+
+      if (!Array.isArray(template_ids) || template_ids.length === 0) {
+        await t.rollback();
+        return res.status(400).json({
+          error: "template_ids 不能为空",
+          code: "TEMPLATE_IDS_REQUIRED",
+        });
+      }
+
+      // 校验包裹归属与可编辑
+      const pkg = await db.Package.findOne({
+        where: {
+          package_code: packageCode,
+          client_id: clientId,
+          status: "prepared",
+        },
+        include: [
+          { model: db.Inbond, as: "inbond", where: { status: "draft" } },
+        ],
+        transaction: t,
+      });
+      if (!pkg) {
+        await t.rollback();
+        return res.status(404).json({ error: "包裹不存在或不可修改" });
+      }
+
+      // 读取模板（仅当前客户）
+      const templates = await db.ItemTemplate.findAll({
+        where: { id: template_ids, client_id: clientId },
+        transaction: t,
+      });
+      if (templates.length === 0) {
+        await t.rollback();
+        return res.status(404).json({ error: "未找到模板" });
+      }
+
+      // 创建明细
+      const createdItems = [];
+      for (const tpl of templates) {
+        const created = await db.PackageItem.create(
+          {
+            package_id: pkg.id,
+            // 模板字段映射到包裹明细，尽量保留有用信息
+            product_description: tpl.description_of_good,
+            hs_code: tpl.hs_code,
+            quantity: tpl.qty ? parseInt(tpl.qty) : null,
+            unit_price: tpl.unit_price_usd
+              ? parseFloat(tpl.unit_price_usd)
+              : null,
+            total_price: tpl.total_value_usd
+              ? parseFloat(tpl.total_value_usd)
+              : null,
+            item_count: tpl.total_boxes ? parseInt(tpl.total_boxes) : null,
+            origin_country: tpl.country_of_origin,
+            manufacturer_mid: tpl.manufacturer,
+            // 其他接收人、尺寸、重量等模板不包含，保持为空，由用户后续补充
+          },
+          { transaction: t }
+        );
+        createdItems.push(created);
+      }
+
+      await t.commit();
+
+      // 审计
+      for (const it of createdItems) {
+        writeAudit({
+          module: "client",
+          entityType: "PackageItem",
+          entityId: it.id,
+          action: "create",
+          user: req.user,
+          before: null,
+          after: pickSnapshot(it, PACKAGE_ITEM_AUDIT_FIELDS),
+          extra: { package_id: pkg.id, imported_from_template: true },
+          ip: req.ip,
+          ua: req.headers["user-agent"],
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `导入 ${createdItems.length} 条明细成功`,
+        count: createdItems.length,
+      });
+    } catch (e) {
+      await t.rollback();
+      console.error(e);
+      return res.status(500).json({ error: "批量导入失败" });
     }
   }
 );
@@ -814,6 +1011,558 @@ router.get(
     } catch (e) {
       console.error(e);
       return res.status(500).json({ error: "获取失败" });
+    }
+  }
+);
+
+// 简化版：表格编辑单个明细
+router.put(
+  "/item/:itemId",
+  authenticate,
+  checkPermission("client.package.item.update"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const clientId = req.user.id;
+      const { itemId } = req.params;
+      const body = req.body || {};
+
+      const item = await db.PackageItem.findOne({
+        where: { id: itemId },
+        include: [
+          {
+            model: db.Package,
+            as: "package",
+            where: { client_id: clientId, status: "prepared" },
+            include: [
+              { model: db.Inbond, as: "inbond", where: { status: "draft" } },
+            ],
+          },
+        ],
+        transaction: t,
+      });
+      if (!item) {
+        await t.rollback();
+        return res
+          .status(404)
+          .json({
+            success: false,
+            code: "ITEM_NOT_EDITABLE",
+            message: "明细不存在或不可编辑",
+          });
+      }
+
+      const before = pickSnapshot(item, PACKAGE_ITEM_AUDIT_FIELDS);
+
+      // 商用规格：仅允许四个字段，并进行严格校验
+      const updates = {};
+
+      if (body.product_description !== undefined) {
+        const v = String(body.product_description).trim();
+        if (v.length > 500) {
+          await t.rollback();
+          return res
+            .status(400)
+            .json({
+              success: false,
+              code: "ITEM_DESC_TOO_LONG",
+              message: "物品名称/描述最长500字符",
+            });
+        }
+        updates.product_description = v || null;
+      }
+
+      if (body.quantity !== undefined) {
+        const n = Number(body.quantity);
+        if (!Number.isInteger(n) || n < 0 || n > 999999) {
+          await t.rollback();
+          return res
+            .status(400)
+            .json({
+              success: false,
+              code: "ITEM_QUANTITY_INVALID",
+              message: "数量需为0-999999的整数",
+            });
+        }
+        updates.quantity = n;
+      }
+
+      if (body.total_price !== undefined) {
+        const n = Number(body.total_price);
+        if (!Number.isFinite(n) || n < 0 || n > 1e12) {
+          await t.rollback();
+          return res
+            .status(400)
+            .json({
+              success: false,
+              code: "ITEM_TOTAL_PRICE_INVALID",
+              message: "总价需为>=0的数值",
+            });
+        }
+        // 保留两位精度
+        updates.total_price = parseFloat(n.toFixed(2));
+      }
+
+      if (body.custom_note !== undefined) {
+        const v = String(body.custom_note).trim();
+        if (v.length > 500) {
+          await t.rollback();
+          return res
+            .status(400)
+            .json({
+              success: false,
+              code: "ITEM_NOTE_TOO_LONG",
+              message: "备注最长500字符",
+            });
+        }
+        updates.custom_note = v || null;
+      }
+
+      Object.assign(item, updates);
+
+      await item.save({ transaction: t });
+      const after = pickSnapshot(item, PACKAGE_ITEM_AUDIT_FIELDS);
+      await t.commit();
+      writeAudit({
+        module: "client",
+        entityType: "PackageItem",
+        entityId: item.id,
+        action: "update",
+        user: req.user,
+        before,
+        after,
+        ip: req.ip,
+        ua: req.headers["user-agent"],
+      });
+      return res.json({ success: true, message: "更新成功", item });
+    } catch (e) {
+      await t.rollback();
+      console.error(e);
+      return res
+        .status(500)
+        .json({
+          success: false,
+          code: "ITEM_UPDATE_ERROR",
+          message: "更新明细失败",
+        });
+    }
+  }
+);
+
+// 简化版：批量新增或更新明细（用于表格一次性提交）
+router.post(
+  "/package/:packageCode/items/bulk",
+  authenticate,
+  checkPermission("client.package.item.update"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const clientId = req.user.id;
+      const { packageCode } = req.params;
+      const { items } = req.body || {};
+      if (!Array.isArray(items)) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({
+            success: false,
+            code: "ITEMS_ARRAY_REQUIRED",
+            message: "items 需要为数组",
+          });
+      }
+      if (items.length > 500) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({
+            success: false,
+            code: "BULK_TOO_LARGE",
+            message: "一次最多500条",
+          });
+      }
+
+      const pkg = await db.Package.findOne({
+        where: {
+          package_code: packageCode,
+          client_id: clientId,
+          status: "prepared",
+        },
+        include: [
+          { model: db.Inbond, as: "inbond", where: { status: "draft" } },
+        ],
+        transaction: t,
+      });
+      if (!pkg) {
+        await t.rollback();
+        return res
+          .status(404)
+          .json({
+            success: false,
+            code: "PACKAGE_NOT_EDITABLE",
+            message: "包裹不存在或不可编辑",
+          });
+      }
+
+      // 校验函数：仅构建四个字段
+      function buildPayload(row) {
+        const payload = {};
+        // product_description
+        if (row.product_description !== undefined) {
+          const v = String(row.product_description).trim();
+          if (v.length > 500) {
+            return {
+              error: {
+                code: "ITEM_DESC_TOO_LONG",
+                message: "物品名称/描述最长500字符",
+              },
+            };
+          }
+          payload.product_description = v || null;
+        }
+        // quantity
+        if (row.quantity !== undefined) {
+          const n = Number(row.quantity);
+          if (!Number.isInteger(n) || n < 0 || n > 999999) {
+            return {
+              error: {
+                code: "ITEM_QUANTITY_INVALID",
+                message: "数量需为0-999999的整数",
+              },
+            };
+          }
+          payload.quantity = n;
+        }
+        // total_price
+        if (row.total_price !== undefined) {
+          const n = Number(row.total_price);
+          if (!Number.isFinite(n) || n < 0 || n > 1e12) {
+            return {
+              error: {
+                code: "ITEM_TOTAL_PRICE_INVALID",
+                message: "总价需为>=0的数值",
+              },
+            };
+          }
+          payload.total_price = parseFloat(n.toFixed(2));
+        }
+        // custom_note
+        if (row.custom_note !== undefined) {
+          const v = String(row.custom_note).trim();
+          if (v.length > 500) {
+            return {
+              error: { code: "ITEM_NOTE_TOO_LONG", message: "备注最长500字符" },
+            };
+          }
+          payload.custom_note = v || null;
+        }
+        return { payload };
+      }
+
+      const created = [];
+      const updated = [];
+      const errors = [];
+      const auditCreates = [];
+      const auditUpdates = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const row = items[i] || {};
+        if (row.id) {
+          const it = await db.PackageItem.findOne({
+            where: { id: row.id, package_id: pkg.id },
+            transaction: t,
+          });
+          if (!it) {
+            errors.push({
+              index: i,
+              id: row.id,
+              code: "ITEM_NOT_FOUND",
+              message: "明细不存在",
+            });
+            continue;
+          }
+          const { payload, error } = buildPayload(row);
+          if (error) {
+            errors.push({ index: i, id: row.id, ...error });
+            continue;
+          }
+          const before = pickSnapshot(it, PACKAGE_ITEM_AUDIT_FIELDS);
+          Object.assign(it, payload);
+          await it.save({ transaction: t });
+          const after = pickSnapshot(it, PACKAGE_ITEM_AUDIT_FIELDS);
+          auditUpdates.push({ id: it.id, before, after });
+          updated.push(it.id);
+        } else {
+          const { payload, error } = buildPayload(row);
+          if (error) {
+            errors.push({ index: i, id: null, ...error });
+            continue;
+          }
+          const it = await db.PackageItem.create(
+            { package_id: pkg.id, ...payload },
+            { transaction: t }
+          );
+          auditCreates.push(it);
+          created.push(it.id);
+        }
+      }
+
+      if (errors.length > 0) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({
+            success: false,
+            code: "BULK_VALIDATE_FAILED",
+            message: "部分数据校验失败",
+            errors,
+          });
+      }
+
+      await t.commit();
+
+      // 审计：批量创建/更新
+      for (const it of auditCreates) {
+        writeAudit({
+          module: "client",
+          entityType: "PackageItem",
+          entityId: it.id,
+          action: "create",
+          user: req.user,
+          before: null,
+          after: pickSnapshot(it, PACKAGE_ITEM_AUDIT_FIELDS),
+          extra: { package_id: pkg.id, bulk: true },
+          ip: req.ip,
+          ua: req.headers["user-agent"],
+        });
+      }
+      for (const a of auditUpdates) {
+        writeAudit({
+          module: "client",
+          entityType: "PackageItem",
+          entityId: a.id,
+          action: "update",
+          user: req.user,
+          before: a.before,
+          after: a.after,
+          extra: { package_id: pkg.id, bulk: true },
+          ip: req.ip,
+          ua: req.headers["user-agent"],
+        });
+      }
+
+      return res.json({ success: true, message: "提交成功", created, updated });
+    } catch (e) {
+      await t.rollback();
+      console.error(e);
+      return res
+        .status(500)
+        .json({
+          success: false,
+          code: "BULK_SAVE_ERROR",
+          message: "批量提交失败",
+        });
+    }
+  }
+);
+
+// 物品联想下拉（根据输入筛选），用于表格中点击“物品名称”弹出的下拉
+router.get(
+  "/package-items/suggestions",
+  authenticate,
+  checkPermission("client.package.item.view"),
+  async (req, res) => {
+    const startAt = Date.now();
+    try {
+      const clientId = req.user.id;
+      const { keyword = "", limit = 10 } = req.query;
+      const kw = String(keyword).trim();
+      const lim = Math.min(50, parseInt(limit) || 10);
+
+      // 1) 来自历史 PackageItem（限定当前客户）
+      const fromItems = await db.PackageItem.findAll({
+        attributes: [
+          "product_name_en",
+          "product_description",
+          "material",
+          "origin_country",
+          "hs_code",
+          "length_cm",
+          "width_cm",
+          "height_cm",
+        ],
+        include: [
+          {
+            model: db.Package,
+            as: "package",
+            attributes: [],
+            where: { client_id: clientId },
+            required: true,
+          },
+        ],
+        where: kw
+          ? {
+              [Op.or]: [
+                { product_name_en: { [Op.like]: `%${kw}%` } },
+                { product_description: { [Op.like]: `%${kw}%` } },
+                { material: { [Op.like]: `%${kw}%` } },
+                { hs_code: { [Op.like]: `%${kw}%` } },
+              ],
+            }
+          : undefined,
+        order: [["created_at", "DESC"]],
+        limit: lim,
+        subQuery: false,
+      });
+
+      // 2) 来自 ItemTemplate（限定当前客户）
+      const fromTpls = await db.ItemTemplate.findAll({
+        attributes: [
+          [db.sequelize.col("description_of_good"), "product_description"],
+          [db.sequelize.col("materials"), "material"],
+          [db.sequelize.col("country_of_origin"), "origin_country"],
+          [db.sequelize.col("hs_code"), "hs_code"],
+        ],
+        where: {
+          client_id: clientId,
+          ...(kw
+            ? {
+                [Op.or]: [
+                  { description_of_good: { [Op.like]: `%${kw}%` } },
+                  { materials: { [Op.like]: `%${kw}%` } },
+                  { hs_code: { [Op.like]: `%${kw}%` } },
+                ],
+              }
+            : {}),
+        },
+        order: [["updated_at", "DESC"]],
+        limit: lim,
+      });
+
+      // 合并与去重（按 name+desc+material+origin+hs）
+      const uniq = new Map();
+      const pushUniq = (r) => {
+        const key = [
+          r.product_name_en || "",
+          r.product_description || "",
+          r.material || "",
+          r.origin_country || "",
+          r.hs_code || "",
+        ].join("|");
+        if (!uniq.has(key)) uniq.set(key, r);
+      };
+      fromItems.forEach((it) =>
+        pushUniq({
+          product_name_en: it.product_name_en || null,
+          product_description: it.product_description || null,
+          material: it.material || null,
+          origin_country: it.origin_country || null,
+          hs_code: it.hs_code || null,
+          length_cm: it.length_cm || null,
+          width_cm: it.width_cm || null,
+          height_cm: it.height_cm || null,
+        })
+      );
+      fromTpls.forEach((t) =>
+        pushUniq({
+          product_name_en: null, // 模板没有英文名字段，留空
+          product_description: t.get("product_description") || null,
+          material: t.get("material") || null,
+          origin_country: t.get("origin_country") || null,
+          hs_code: t.get("hs_code") || null,
+          length_cm: null,
+          width_cm: null,
+          height_cm: null,
+        })
+      );
+
+      const list = Array.from(uniq.values()).slice(0, lim);
+      res.json({ success: true, suggestions: list });
+      logRead(req, {
+        entityType: "PackageItemSuggestion",
+        page: 1,
+        pageSize: list.length,
+        resultCount: list.length,
+        startAt,
+      });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ success: false, error: "获取建议失败" });
+    }
+  }
+);
+
+// “新物品”弹窗：创建 ItemTemplate 以便下次快速选择
+router.post(
+  "/item-templates",
+  authenticate,
+  checkPermission("client.package.item.add"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const clientId = req.user.id;
+      const {
+        sku,
+        product_name_en, // 可选，保存到备注或前缀
+        product_description,
+        material,
+        origin_country,
+        hs_code,
+        unit_price_usd,
+        total_value_usd,
+      } = req.body || {};
+
+      if (!product_description) {
+        await t.rollback();
+        return res.status(400).json({
+          success: false,
+          code: "ITEM_TEMPLATE_DESC_REQUIRED",
+          message: "产品用途/描述必填",
+        });
+      }
+
+      const tpl = await db.ItemTemplate.create(
+        {
+          client_id: clientId,
+          sku: sku || null,
+          description_of_good: product_description,
+          materials: material || null,
+          country_of_origin: origin_country || null,
+          hs_code: hs_code || null,
+          unit_price_usd: unit_price_usd ? parseFloat(unit_price_usd) : null,
+          total_value_usd: total_value_usd ? parseFloat(total_value_usd) : null,
+        },
+        { transaction: t }
+      );
+
+      await t.commit();
+      writeAudit({
+        module: "client",
+        entityType: "ItemTemplate",
+        entityId: tpl.id,
+        action: "create",
+        user: req.user,
+        before: null,
+        after: null,
+        extra: {
+          client_id: clientId,
+          sku: tpl.sku,
+          description_of_good: tpl.description_of_good,
+          materials: tpl.materials,
+          country_of_origin: tpl.country_of_origin,
+          hs_code: tpl.hs_code,
+        },
+        ip: req.ip,
+        ua: req.headers["user-agent"],
+      });
+      return res.json({
+        success: true,
+        message: "新物品已创建",
+        template: tpl,
+      });
+    } catch (e) {
+      await t.rollback();
+      console.error(e);
+      return res.status(500).json({ success: false, error: "创建失败" });
     }
   }
 );

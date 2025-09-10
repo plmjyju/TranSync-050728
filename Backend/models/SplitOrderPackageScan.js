@@ -54,7 +54,15 @@ export default (sequelize, DataTypes) => {
         { fields: ["package_id"] },
         { fields: ["operation_requirement_id"] },
         { fields: ["temp_pallet_id"] },
-        { unique: true, fields: ["split_order_id", "package_id"] },
+        {
+          unique: true,
+          name: "uq_split_pkgscan_pkg",
+          fields: ["split_order_id", "package_id"],
+        },
+        {
+          fields: ["split_order_id", "sequence_in_order"],
+          name: "idx_split_pkgscan_order_seq",
+        },
       ],
     }
   );

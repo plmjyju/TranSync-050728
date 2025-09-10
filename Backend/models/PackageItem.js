@@ -39,6 +39,7 @@ export default (sequelize, DataTypes) => {
       hs_code: { type: DataTypes.STRING(20) },
       product_name_en: { type: DataTypes.STRING(200) },
       product_description: { type: DataTypes.STRING(500) },
+      material: { type: DataTypes.STRING(200) },
       origin_country: { type: DataTypes.STRING(10) },
       url: { type: DataTypes.STRING(255) },
 

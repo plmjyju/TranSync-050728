@@ -1,5 +1,7 @@
 # TranSync FTZ Warehouse Management System
 
+> Documentation index: see `Backend/docs/index.md` (new structured docs with architecture, workflows, API, security, testing, deprecated).
+
 ## 项目简介
 
 TranSync 是一个面向保税仓库的仓库管理系统，支持多仓库、多租户的操作。系统分为以下模块：
@@ -154,6 +156,16 @@ Backend/
     }
   }
   ```
+
+## 统一认证与权限初始化说明 (2025-08-19 更新)
+
+- 唯一认证中间件: `Backend/middlewares/authenticate.js`
+  - 所有路由必须引用该文件 (默认导出或具名 `{ authenticate }`).
+  - 旧路径 `Backend/middleware/auth.js` 已移除并备份，不再使用。
+- 权限与角色初始化: 仅保留脚本 `seed/initPermissionsAndRoles.js` + 数据源 `seed/permissions.js`。
+  - 初始化命令: `npm run seed:permissions`
+  - 新增权限请修改 `seed/permissions.js` 后重新执行初始化脚本。
+- 原一次性/测试脚本已迁移至 `_backup_removed_20250819/`，生产部署不再包含。
 
 ## 贡献
 

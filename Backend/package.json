@@ -11,7 +11,16 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "seed:permissions": "node seed/initPermissionsAndRoles.js"
+    "seed:permissions": "node seed/initPermissionsAndRoles.js",
+    "ledger:outbox": "node jobs/processLedgerOutbox.js",
+    "split:recover": "node jobs/recoverFinalizeStuck.js",
+    "split:finalize-retry": "node jobs/finalizeRetryWorker.js",
+    "user:set-role": "node scripts/setUserRole.js",
+    "seed:test-users": "node seed/seedTestUsers.js",
+    "seed:test-customer": "node seed/seedTestCustomer.js",
+    "user:bind-customer": "node scripts/bindCustomerToAgent.mjs",
+    "dev:verify": "pwsh -NoProfile -Command \"npm run seed:permissions; npm run seed:test-users; npm run seed:test-customer; npm run user:set-role; npm run user:bind-customer\"",
+    "db:migrate": "node --loader ts-node/esm scripts/runMigrations.mjs || node scripts/runMigrations.mjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -20,7 +29,9 @@
     "jsonwebtoken": "^9.0.2",
     "moment-timezone": "^0.6.0",
     "mysql2": "^3.14.2",
+    "prom-client": "^15.1.3",
+    "redis": "^4.6.13",
     "sequelize": "^6.37.7",
-    "redis": "^4.6.13"
+    "umzug": "^3.8.0"
   }
 }

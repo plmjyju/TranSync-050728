@@ -1,6 +1,6 @@
 import express from "express";
 import db from "../../models/index.js";
-import authenticate from "../../middlewares/authenticate.js"; // 统一默认导出
+import authenticate from "../../middlewares/authenticate.js";
 import { checkPermission } from "../../middlewares/checkPermission.js";
 import moment from "moment-timezone";
 import {
@@ -26,7 +26,7 @@ router.post(
       const agentId = req.user.salesRepId; // From JWT token
       const {
         shipping_type = "air",
-        clearance_type = "general_trade",
+        clearance_type = "T01",
         tax_type_id,
         arrival_method,
         remark,
@@ -41,6 +41,7 @@ router.post(
             )
           );
       const validClearanceTypes = [
+        // 兼容旧值
         "general_trade",
         "bonded_warehouse",
         "cross_border_ecom",
@@ -49,6 +50,10 @@ router.post(
         "temporary_import",
         "duty_free",
         "re_import",
+        // 新增代码
+        "T01",
+        "T11",
+        "T06-T01",
       ];
       if (!validClearanceTypes.includes(clearance_type))
         return res
@@ -143,6 +148,53 @@ router.post(
   }
 );
 
+// 创建/更新 inbond 时可同时提交清关 items（可选）
+router.post(
+  "/inbonds",
+  authenticate,
+  checkPermission("client.inbond.create"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const clientId = req.user.id;
+      const { inbond, items } = req.body || {};
+      if (!inbond?.inbond_code) {
+        await t.rollback();
+        return res.status(400).json({
+          success: false,
+          code: "INBOND_CODE_MISSING",
+          message: "入库单号不能为空",
+        });
+      }
+      const created = await db.Inbond.create(
+        { ...inbond, client_id: clientId },
+        { transaction: t }
+      );
+      if (Array.isArray(items) && items.length) {
+        const list = items.map((it) => ({
+          ...it,
+          inbond_id: created.id,
+          client_id: clientId,
+        }));
+        await db.InbondDeclarationItem.bulkCreate(list, { transaction: t });
+        await created.update(
+          { clearance_summary_json: JSON.stringify(list.slice(0, 200)) },
+          { transaction: t }
+        );
+      }
+      await t.commit();
+      return res.json({ success: true, message: "创建成功", inbond: created });
+    } catch (e) {
+      await t.rollback();
+      return res.status(500).json({
+        success: false,
+        code: "INBOND_CREATE_ERROR",
+        message: "创建失败",
+      });
+    }
+  }
+);
+
 // Get all inbonds for the authenticated customer
 router.get(
   "/inbonds",
@@ -156,6 +208,7 @@ router.get(
         page = 1,
         limit = 20,
         status,
+        q,
         startDate,
         endDate,
         dateField = "created_at", // 可以选择按 created_at 或 updated_at 筛选
@@ -170,6 +223,12 @@ router.get(
       // 状态筛选
       if (status) {
         whereClause.status = status;
+      }
+      if (q) {
+        whereClause[db.Sequelize.Op.or] = [
+          { inbond_code: { [db.Sequelize.Op.like]: `%${q}%` } },
+          { remark: { [db.Sequelize.Op.like]: `%${q}%` } },
+        ];
       }
 
       // 日期范围筛选（支持时区）
@@ -233,15 +292,87 @@ router.get(
           "shipping_type",
           "arrival_method",
           "status",
+          "clearance_type",
           "remark",
           "created_at",
           "updated_at",
         ],
       });
 
+      // === 聚合当前页统计 ===
+      const ids = rows.map((r) => r.id);
+      const { fn, col, literal, Op } = db.Sequelize;
+      const statsMap = new Map();
+      if (ids.length > 0) {
+        let stats = [];
+        try {
+          stats = await db.Package.findAll({
+            attributes: [
+              "inbond_id",
+              [fn("COUNT", col("id")), "total_packages"],
+              [
+                fn(
+                  "SUM",
+                  literal(
+                    "CASE WHEN `inbound_status` IN ('arrived','received') THEN 1 ELSE 0 END"
+                  )
+                ),
+                "arrived_packages",
+              ],
+              [fn("MAX", col("arrival_confirmed_at")), "last_arrival_at"],
+              [fn("MAX", col("last_scanned_at")), "last_scan_at"],
+            ],
+            where: { inbond_id: { [Op.in]: ids } },
+            group: ["inbond_id"],
+            raw: true,
+          });
+        } catch (err) {
+          // 回退：数据库尚未有 last_scanned_at 列时，移除该聚合，避免接口报错
+          const msg = err?.original?.sqlMessage || err?.message || "";
+          if (
+            err?.name === "SequelizeDatabaseError" &&
+            (err?.original?.code === "ER_BAD_FIELD_ERROR" ||
+              /last_scanned_at/i.test(msg))
+          ) {
+            stats = await db.Package.findAll({
+              attributes: [
+                "inbond_id",
+                [fn("COUNT", col("id")), "total_packages"],
+                [
+                  fn(
+                    "SUM",
+                    literal(
+                      "CASE WHEN `inbound_status` IN ('arrived','received') THEN 1 ELSE 0 END"
+                    )
+                  ),
+                  "arrived_packages",
+                ],
+                [fn("MAX", col("arrival_confirmed_at")), "last_arrival_at"],
+              ],
+              where: { inbond_id: { [Op.in]: ids } },
+              group: ["inbond_id"],
+              raw: true,
+            });
+          } else {
+            throw err;
+          }
+        }
+        for (const s of stats) statsMap.set(s.inbond_id, s);
+      }
+      const merged = rows.map((r) => {
+        const s = statsMap.get(r.id) || {};
+        return {
+          ...r.toJSON(),
+          total_packages: Number(s.total_packages || 0),
+          arrived_packages: Number(s.arrived_packages || 0),
+          last_arrival_at: s.last_arrival_at || null,
+          last_scan_at: s.last_scan_at || null,
+        };
+      });
+
       const response = {
         message: "Inbonds retrieved successfully",
-        inbonds: rows,
+        inbonds: merged,
         pagination: {
           total: count,
           page: parseInt(page),
@@ -370,6 +501,9 @@ router.put(
           "temporary_import",
           "duty_free",
           "re_import",
+          "T01",
+          "T11",
+          "T06-T01",
         ];
         if (!validClearanceTypes.includes(clearance_type))
           return res
@@ -441,7 +575,7 @@ router.put(
 router.post(
   "/inbond/:id/submit",
   authenticate,
-  checkPermission("client.inbond.update"),
+  checkPermission("client.inbond.submit"),
   async (req, res) => {
     const auditRecords = [];
     try {
@@ -466,6 +600,7 @@ router.post(
                 as: "operationRequirement",
                 attributes: ["id", "requirement_code", "requirement_name"],
               },
+              { model: db.PackageItem, as: "items", attributes: ["id"] },
             ],
             transaction: t,
           });
@@ -483,6 +618,18 @@ router.post(
               "存在未分配操作需求的包裹",
               { invalid_package_ids: invalidPkgs.map((p) => p.id) }
             );
+          // 新增：校验每个包裹必须至少有一个明细
+          const pkgsNoItems = packages.filter(
+            (p) => !p.items || p.items.length === 0
+          );
+          if (pkgsNoItems.length > 0) {
+            throw buildError(
+              ERROR_CODES.INBOND_PACKAGE_MISSING_ITEMS,
+              "存在未填写明细的包裹",
+              { invalid_package_ids: pkgsNoItems.map((p) => p.id) }
+            );
+          }
+
           const beforeSnap = pickSnapshot(inbond, INBOND_AUDIT_FIELDS);
           const aggMap = new Map();
           for (const pkg of packages) {
@@ -532,12 +679,72 @@ router.post(
         inbond_id: result.inbond.id,
         requirement_summary: result.summaryArray,
       });
-    } catch (e) {
-      if (e && e.code) return res.status(400).json(e);
-      console.error(e);
+    } catch (err) {
+      console.error("Submit inbond failed:", err);
       return res
         .status(500)
         .json(buildError(ERROR_CODES.INBOND_SUBMIT_FAILED, "提交失败"));
+    }
+  }
+);
+
+// 更新 inbond 时可同时提交清关 items
+router.put(
+  "/inbonds/:id",
+  authenticate,
+  checkPermission("client.inbond.update"),
+  async (req, res) => {
+    const t = await db.sequelize.transaction();
+    try {
+      const clientId = req.user.id;
+      const { id } = req.params;
+      const { inbond, items } = req.body || {};
+      const model = await db.Inbond.findOne({
+        where: { id, client_id: clientId },
+        transaction: t,
+      });
+      if (!model) {
+        await t.rollback();
+        return res.status(404).json({
+          success: false,
+          code: "INBOND_NOT_FOUND",
+          message: "入库单不存在",
+        });
+      }
+      await model.update(inbond || {}, { transaction: t });
+      if (Array.isArray(items)) {
+        // 简化：先删后插
+        await db.InbondDeclarationItem.destroy({
+          where: { inbond_id: id, client_id: clientId },
+          transaction: t,
+        });
+        if (items.length) {
+          const list = items.map((it) => ({
+            ...it,
+            inbond_id: id,
+            client_id: clientId,
+          }));
+          await db.InbondDeclarationItem.bulkCreate(list, { transaction: t });
+          await model.update(
+            { clearance_summary_json: JSON.stringify(list.slice(0, 200)) },
+            { transaction: t }
+          );
+        } else {
+          await model.update(
+            { clearance_summary_json: null },
+            { transaction: t }
+          );
+        }
+      }
+      await t.commit();
+      return res.json({ success: true, message: "更新成功", inbond: model });
+    } catch (e) {
+      await t.rollback();
+      return res.status(500).json({
+        success: false,
+        code: "INBOND_UPDATE_ERROR",
+        message: "更新失败",
+      });
     }
   }
 );

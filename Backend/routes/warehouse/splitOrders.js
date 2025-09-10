@@ -9,6 +9,21 @@ import { generateRepackPalletCode } from "../../utils/generateRepackPalletCode.j
 import { writeFtzInternalMoveLedger } from "../../utils/ftzLedger.js";
 import { Op, Sequelize } from "sequelize"; // add Sequelize for aggregation
 import crypto from "crypto";
+import {
+  splitScanCounter,
+  splitFinalizeCounter,
+  finalizeDurationHist,
+} from "../../metrics/prometheus.js";
+
+// Ensure status constants available
+const STAT = db.SplitOrder?.STATUSES || {
+  CREATED: "created",
+  ASSIGNED: "assigned",
+  PROCESSING: "processing",
+  VERIFYING: "verifying",
+  COMPLETED: "completed",
+  CANCELLED: "cancelled",
+};
 
 const router = express.Router();
 const buildResp = (message, extra = {}) => ({
@@ -56,12 +71,18 @@ router.post(
           buildFail("SPLIT_CREATE_MISSING", "缺少 awb 或 source_pmc_pallet_ids")
         );
     const pallets = await db.Pallet.findAll({
-      where: { id: source_pmc_pallet_ids },
+      where: {
+        id: source_pmc_pallet_ids,
+        tenant_id: req.user.tenant_id,
+        warehouse_id: req.user.warehouse_id,
+      },
     });
     if (pallets.length !== source_pmc_pallet_ids.length)
       return res
         .status(404)
-        .json(buildFail("SPLIT_SOURCE_PALLET_NOT_FOUND", "部分源板不存在"));
+        .json(
+          buildFail("SPLIT_SOURCE_PALLET_NOT_FOUND", "部分源板不存在或越权")
+        );
     const palletIds = pallets.map((p) => p.id);
     const packages = await db.Package.findAll({
       where: { pallet_id: palletIds },
@@ -74,6 +95,7 @@ router.post(
             "requirement_code",
             "requirement_name_en",
             "requirement_name",
+            "label_abbr",
           ],
         },
       ],
@@ -94,27 +116,32 @@ router.post(
       distinct_operation_requirements_expected: reqGrouped.size,
       created_by: req.user.id,
       remark,
+      tenant_id: req.user.tenant_id,
+      warehouse_id: req.user.warehouse_id,
     });
     // 初始化 requirement stats 期望数量
     for (const [rid, info] of reqGrouped.entries()) {
       const opReq = info.pkg.operationRequirement;
       let abbr = null;
       if (opReq) {
-        if (opReq.requirement_name_en)
-          abbr = opReq.requirement_name_en
-            .split(/\s+/)
-            .map((w) => w[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 4);
-        else if (opReq.requirement_name)
-          abbr = opReq.requirement_name
-            .split(/\s+/)
-            .map((w) => w[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 4);
-        else abbr = (opReq.requirement_code || "").slice(0, 4).toUpperCase();
+        abbr = opReq.label_abbr || abbr;
+        if (!abbr) {
+          if (opReq.requirement_name_en)
+            abbr = opReq.requirement_name_en
+              .split(/\s+/)
+              .map((w) => w[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 4);
+          else if (opReq.requirement_name)
+            abbr = opReq.requirement_name
+              .split(/\s+/)
+              .map((w) => w[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 4);
+          else abbr = (opReq.requirement_code || "").slice(0, 4).toUpperCase();
+        }
       }
       await db.SplitOrderRequirementStat.create({
         split_order_id: created.id,
@@ -157,17 +184,23 @@ router.post(
       return res
         .status(400)
         .json(buildFail("SPLIT_ASSIGN_USER_MISSING", "缺少 user_id"));
-    const so = await db.SplitOrder.findByPk(id);
+    const so = await db.SplitOrder.findOne({
+      where: {
+        id,
+        tenant_id: req.user.tenant_id,
+        warehouse_id: req.user.warehouse_id,
+      },
+    });
     if (!so)
       return res.status(404).json(buildFail("SPLIT_NOT_FOUND", "分板单不存在"));
-    if (!["created", "assigned"].includes(so.status))
+    if (![STAT.CREATED, STAT.ASSIGNED].includes(so.status))
       return res
         .status(400)
         .json(buildFail("SPLIT_ASSIGN_STATUS_INVALID", "状态不允许指派"));
     const before = so.toJSON();
     await so.update({
       assigned_user_id: user_id,
-      status: "assigned",
+      status: STAT.ASSIGNED,
       assigned_at: so.assigned_at || new Date(),
     });
     writeAudit({
@@ -200,22 +233,29 @@ router.post(
       return await withRedisLock(`lock:split:${id}`, 8, async () => {
         const t = await db.sequelize.transaction();
         try {
-          const split = await db.SplitOrder.findByPk(id, { transaction: t });
+          const split = await db.SplitOrder.findOne({
+            where: {
+              id,
+              tenant_id: req.user.tenant_id,
+              warehouse_id: req.user.warehouse_id,
+            },
+            transaction: t,
+          });
           if (!split) {
             await t.rollback();
             return res
               .status(404)
               .json(buildFail("SPLIT_NOT_FOUND", "分板单不存在"));
           }
-          if (!["assigned", "processing"].includes(split.status)) {
+          if (![STAT.ASSIGNED, STAT.PROCESSING].includes(split.status)) {
             await t.rollback();
             return res
               .status(400)
               .json(buildFail("SPLIT_SCAN_STATUS_INVALID", "状态不允许扫描"));
           }
-          if (split.status === "assigned")
+          if (split.status === STAT.ASSIGNED)
             await split.update(
-              { status: "processing", started_at: new Date() },
+              { status: STAT.PROCESSING, started_at: new Date() },
               { transaction: t }
             );
           const sourceIds = JSON.parse(split.source_pmc_pallet_ids || "[]");
@@ -247,7 +287,12 @@ router.post(
                 as: "splitOrder",
                 where: {
                   status: {
-                    [Op.in]: ["created", "assigned", "processing", "verifying"],
+                    [Op.in]: [
+                      STAT.CREATED,
+                      STAT.ASSIGNED,
+                      STAT.PROCESSING,
+                      STAT.VERIFYING,
+                    ],
                   },
                   id: { [Op.ne]: split.id },
                 },
@@ -298,22 +343,27 @@ router.post(
             const opReq = pkg.operationRequirement;
             let abbr = null;
             if (opReq) {
-              if (opReq.requirement_name_en) {
-                abbr = opReq.requirement_name_en
-                  .split(/\s+/)
-                  .map((w) => w[0])
-                  .join("")
-                  .toUpperCase()
-                  .slice(0, 4);
-              } else if (opReq.requirement_name) {
-                abbr = opReq.requirement_name
-                  .split(/\s+/)
-                  .map((w) => w[0])
-                  .join("")
-                  .toUpperCase()
-                  .slice(0, 4);
-              } else {
-                abbr = (opReq.requirement_code || "").slice(0, 4).toUpperCase();
+              abbr = opReq.label_abbr || abbr;
+              if (!abbr) {
+                if (opReq.requirement_name_en) {
+                  abbr = opReq.requirement_name_en
+                    .split(/\s+/)
+                    .map((w) => w[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 4);
+                } else if (opReq.requirement_name) {
+                  abbr = opReq.requirement_name
+                    .split(/\s+/)
+                    .map((w) => w[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 4);
+                } else {
+                  abbr = (opReq.requirement_code || "")
+                    .slice(0, 4)
+                    .toUpperCase();
+                }
               }
             }
             stat = await db.SplitOrderRequirementStat.create(
@@ -343,7 +393,7 @@ router.post(
             where: {
               split_order_id: id,
               operation_requirement_id: pkg.operation_requirement_id,
-              status: "open",
+              status: PALLET_TEMP_STATUS.OPEN,
             },
             order: [["sequence_no", "DESC"]],
             transaction: t,
@@ -368,11 +418,39 @@ router.post(
               { transaction: t }
             );
           }
-          const scanSeq =
-            (await db.SplitOrderPackageScan.count({
-              where: { split_order_id: id },
-              transaction: t,
-            })) + 1;
+          // optimized scan sequence generation (Redis incr fallback to count)
+          let scanSeq;
+          let expectedSeq = split.scanned_package_count + 1; // authoritative next sequence
+          try {
+            const r = await getRedis();
+            scanSeq = await r.incr(`split:${id}:scan_seq`);
+          } catch {
+            scanSeq = expectedSeq; // fallback
+          }
+          // Gap detection & self-heal: if redis-based scanSeq drifts, correct it
+          if (scanSeq !== expectedSeq) {
+            // reset to authoritative expectedSeq
+            const old = scanSeq;
+            scanSeq = expectedSeq;
+            try {
+              const r = await getRedis();
+              await r.set(`split:${id}:scan_seq`, scanSeq); // reseed
+            } catch {}
+            writeAudit({
+              module: "warehouse",
+              entityType: "SplitOrder",
+              entityId: split.id,
+              action: "split-order-scan-seq-fix",
+              user: req.user,
+              before: null,
+              after: null,
+              extra: {
+                old_seq: old,
+                fixed_seq: scanSeq,
+                expected_seq: expectedSeq,
+              },
+            });
+          }
           const scan = await db.SplitOrderPackageScan.create(
             {
               split_order_id: id,
@@ -397,6 +475,10 @@ router.post(
             { transaction: t }
           );
           await t.commit();
+          splitScanCounter.inc({
+            tenant: String(req.user.tenant_id || 0),
+            warehouse: String(req.user.warehouse_id || 0),
+          });
           writeAudit({
             module: "warehouse",
             entityType: "SplitOrder",
@@ -450,13 +532,16 @@ router.post(
               .status(404)
               .json(buildFail("SPLIT_TEMP_NOT_FOUND", "临时板不存在"));
           }
-          if (temp.status !== "open") {
+          if (temp.status !== PALLET_TEMP_STATUS.OPEN) {
             await t.rollback();
             return res
               .status(400)
               .json(buildFail("SPLIT_TEMP_NOT_OPEN", "临时板不可标记满板"));
           }
-          await temp.update({ status: "full" }, { transaction: t });
+          await temp.update(
+            { status: PALLET_TEMP_STATUS.FULL },
+            { transaction: t }
+          );
           // fetch split for decision
           const split = await db.SplitOrder.findByPk(id, { transaction: t });
           let createdNext = false;
@@ -535,7 +620,12 @@ router.get(
   checkPermission("warehouse.split_order.view"),
   async (req, res) => {
     const { id } = req.params;
-    const split = await db.SplitOrder.findByPk(id, {
+    const split = await db.SplitOrder.findOne({
+      where: {
+        id,
+        tenant_id: req.user.tenant_id,
+        warehouse_id: req.user.warehouse_id,
+      },
       include: [
         { model: db.SplitOrderRequirementStat, as: "requirementStats" },
         { model: db.SplitOrderPalletTemp, as: "tempPallets" },
@@ -558,7 +648,12 @@ router.post(
       return await withRedisLock(`lock:split:${id}`, 8, async () => {
         const t = await db.sequelize.transaction();
         try {
-          const split = await db.SplitOrder.findByPk(id, {
+          const split = await db.SplitOrder.findOne({
+            where: {
+              id,
+              tenant_id: req.user.tenant_id,
+              warehouse_id: req.user.warehouse_id,
+            },
             include: [
               { model: db.SplitOrderRequirementStat, as: "requirementStats" },
             ],
@@ -655,7 +750,12 @@ router.post(
       return await withRedisLock(`lock:split:${id}`, 30, async () => {
         const t = await db.sequelize.transaction();
         try {
-          const split = await db.SplitOrder.findByPk(id, {
+          const split = await db.SplitOrder.findOne({
+            where: {
+              id,
+              tenant_id: req.user.tenant_id,
+              warehouse_id: req.user.warehouse_id,
+            },
             include: [
               { model: db.SplitOrderPalletTemp, as: "tempPallets" },
               { model: db.SplitOrderRequirementStat, as: "requirementStats" },
@@ -815,19 +915,35 @@ router.post(
             where: { id: packageIds },
             transaction: t,
           });
-          const items = await (db.PackageItem
-            ? db.PackageItem.findAll({
+          // PackageItem pagination / memory optimization
+          const itemsByPkg = new Map();
+          if (db.PackageItem) {
+            const BATCH_SIZE = 800;
+            if (packageIds.length <= BATCH_SIZE) {
+              const allItems = await db.PackageItem.findAll({
                 where: { package_id: packageIds },
                 transaction: t,
-              })
-            : []);
-          const scansByTemp = new Map();
-          for (const sc of scans) {
-            if (!scansByTemp.has(sc.temp_pallet_id))
-              scansByTemp.set(sc.temp_pallet_id, []);
-            scansByTemp.get(sc.temp_pallet_id).push(sc);
+              });
+              for (const it of allItems) {
+                if (!itemsByPkg.has(it.package_id))
+                  itemsByPkg.set(it.package_id, []);
+                itemsByPkg.get(it.package_id).push(it);
+              }
+            } else {
+              for (let i = 0; i < packageIds.length; i += BATCH_SIZE) {
+                const slice = packageIds.slice(i, i + BATCH_SIZE);
+                const batchItems = await db.PackageItem.findAll({
+                  where: { package_id: slice },
+                  transaction: t,
+                });
+                for (const it of batchItems) {
+                  if (!itemsByPkg.has(it.package_id))
+                    itemsByPkg.set(it.package_id, []);
+                  itemsByPkg.get(it.package_id).push(it);
+                }
+              }
+            }
           }
-          const pkgMap = new Map(packages.map((p) => [p.id, p]));
           const moveLedgerPayload = [];
           const newPallets = [];
           const affectedSourcePallets = new Set();
@@ -863,7 +979,7 @@ router.post(
             for (const p of pkgs) {
               const srcPid = p.pallet_id;
               affectedSourcePallets.add(srcPid);
-              const its = items.filter((it) => it.package_id === p.id);
+              const its = itemsByPkg.get(p.id) || [];
               moveLedgerPayload.push({
                 package: p,
                 old_pallet_id: srcPid,
@@ -872,7 +988,7 @@ router.post(
               });
             }
             await temp.update(
-              { status: "confirmed", pallet_id: newPallet.id },
+              { status: PALLET_TEMP_STATUS.CONFIRMED, pallet_id: newPallet.id },
               { transaction: t }
             );
           }
@@ -924,6 +1040,14 @@ router.post(
             }
           }
 
+          // locate insertion point after source pallets update and before split.update
+          const ledgerResult = await writeSplitInternalMoveLedgerHelper({
+            moveLedgerPayload,
+            req,
+            transaction: t,
+            splitId: split.id,
+          });
+
           await split.update(
             {
               status: STAT.COMPLETED,
@@ -933,10 +1057,17 @@ router.post(
             { transaction: t }
           );
           await t.commit();
+          endTimer();
+          splitFinalizeCounter.inc({
+            tenant: String(req.user.tenant_id || 0),
+            warehouse: String(req.user.warehouse_id || 0),
+            result: "success",
+          });
 
-          // Store idempotency hash after success
+          // Store idempotency hash after success & set scan seq key expire
           try {
             await r.set(hashKey, reqHash, { EX: 24 * 3600 });
+            await r.expire(`split:${id}:scan_seq`, 3600); // auto cleanup scan sequence counter after 1h
           } catch (_) {}
 
           // Build detailed move mapping (#7) with truncation safeguard
@@ -975,6 +1106,7 @@ router.post(
               package_moves_truncated: truncated,
               idempotency_hash: reqHash,
               idempotency_key,
+              ledger_written_count: ledgerResult.written,
             },
           });
           return res.json(buildResp("Finalize 成功", { completed: true }));
@@ -990,6 +1122,11 @@ router.post(
           } catch (_) {}
           await t.rollback();
           console.error(e);
+          splitFinalizeCounter.inc({
+            tenant: String(req.user.tenant_id || 0),
+            warehouse: String(req.user.warehouse_id || 0),
+            result: "error",
+          });
           return res
             .status(500)
             .json(buildFail("SPLIT_FINALIZE_ERROR", "Finalize 失败"));
@@ -1017,7 +1154,14 @@ router.post(
       return await withRedisLock(`lock:split:${id}`, 10, async () => {
         const t = await db.sequelize.transaction();
         try {
-          const split = await db.SplitOrder.findByPk(id, { transaction: t });
+          const split = await db.SplitOrder.findOne({
+            where: {
+              id,
+              tenant_id: req.user.tenant_id,
+              warehouse_id: req.user.warehouse_id,
+            },
+            transaction: t,
+          });
           if (!split) {
             await t.rollback();
             return res
@@ -1047,7 +1191,7 @@ router.post(
           });
           await split.update(
             {
-              status: "cancelled",
+              status: STAT.CANCELLED,
               cancelled_at: new Date(),
               cancel_reason: reason || null,
             },
@@ -1084,3 +1228,85 @@ router.post(
 );
 
 export default router;
+
+// finalize route augmentation: add tenant/warehouse filters & internal move ledger writing
+// 查找并替换现有 finalize 实现（这里只追加写 ledger 逻辑, 假设上方已有 finalize 代码, 我们在成功 commit 后追加 ledger 调用）
+// 为简洁仅在文件末尾附加一个后置中间件方式不可行, 需在原 finalize 成功路径中写入; 这里示例：拦截 res.json 返回包装
+// 简化：提供一个工具函数供原 finalize 调用时可插入 ledger (需要手动在 finalize 逻辑中调用)
+export async function writeSplitInternalMoveLedgerHelper({
+  moveLedgerPayload,
+  req,
+  transaction,
+  splitId,
+}) {
+  try {
+    if (!moveLedgerPayload || moveLedgerPayload.length === 0)
+      return { written: 0 };
+    const result = await writeFtzInternalMoveLedger({
+      moves: moveLedgerPayload,
+      user: req.user,
+      transaction,
+      split_order_id: splitId,
+    });
+    return result;
+  } catch (e) {
+    console.error("internal_move ledger write failed", e);
+    // Fallback: 写入 Outbox 以便异步补偿
+    try {
+      const minimalMoves = moveLedgerPayload.map((mv) => ({
+        package_id: mv.package?.id,
+        old_pallet_id: mv.old_pallet_id,
+        new_pallet_id: mv.new_pallet_id,
+        item_count: mv.items?.length || 0,
+        items: (mv.items || []).slice(0, 20).map((it) => ({
+          // snapshot limit 20 per package
+          id: it.id,
+          tracking_no: it.tracking_no,
+          weight_kg: it.weight_kg,
+          quantity: it.quantity,
+          total_price: it.total_price,
+          hs_code: it.hs_code,
+        })),
+      }));
+      await db.FtzInventoryLedgerOutbox.create(
+        {
+          direction: "internal_move",
+          status: "pending",
+          split_order_id: splitId,
+          tenant_id: req.user.tenant_id,
+          warehouse_id: req.user.warehouse_id,
+          version: 2,
+          payload_json: JSON.stringify({ moves: minimalMoves, version: 2 }),
+          last_error: e.message?.slice(0, 500) || null,
+          attempts: 0,
+        },
+        { transaction }
+      );
+      writeAudit({
+        module: "warehouse",
+        entityType: "SplitOrder",
+        entityId: splitId,
+        action: "split-order-ledger-outbox-create",
+        user: req.user,
+        before: null,
+        after: null,
+        extra: { moves_count: minimalMoves.length, version: 2 },
+      });
+    } catch (oboxErr) {
+      console.error("ledger outbox write failed", oboxErr);
+    }
+    writeAudit({
+      module: "warehouse",
+      entityType: "SplitOrder",
+      entityId: splitId,
+      action: "split-order-ledger-error",
+      user: req.user,
+      before: null,
+      after: null,
+      extra: { error: e.message },
+    });
+    return { written: 0, error: e.message, outboxed: true };
+  }
+}
+
+// NOTE: 需手动在 finalize 成功 commit 前调用: await writeSplitInternalMoveLedgerHelper({ moveLedgerPayload, req, transaction: t, splitId: split.id })

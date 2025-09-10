@@ -53,7 +53,12 @@ export default (sequelize, DataTypes) => {
         { fields: ["status"] },
         {
           unique: true,
+          name: "uq_split_pallet_temp_seq",
           fields: ["split_order_id", "operation_requirement_id", "sequence_no"],
+        },
+        {
+          fields: ["split_order_id", "status"],
+          name: "idx_split_pallet_temp_split_status",
         },
       ],
     }

@@ -12,6 +12,7 @@ import {
 } from "../../utils/auditHelper.js";
 import { logRead, logViewDetail } from "../../utils/logRead.js";
 import { createRateLimiter } from "../../utils/redisRateLimit.js";
+import { applyScopeToWhere } from "../../utils/scope.js";
 
 const router = express.Router();
 
@@ -30,6 +31,15 @@ function maskEmail(email) {
   return name.slice(0, 2) + "***@" + domain;
 }
 
+function roleCtx(req) {
+  const roleName = req.user.roleName || req.user.role?.name || "";
+  const perms = req.user.permissions || [];
+  const isSuper = perms.includes("*") || roleName === "super_admin";
+  const isAgentManager = roleName === "agent_manager";
+  const isAgent = req.user.userType === "agent";
+  return { roleName, perms, isSuper, isAgentManager, isAgent };
+}
+
 // 创建客户
 router.post(
   "/",
@@ -46,13 +56,11 @@ router.post(
     }
     const allowed = await createCustomerLimiter(agent.id);
     if (!allowed.ok) {
-      return res
-        .status(429)
-        .json(
-          buildError(ERROR_CODES.CUSTOMER_RATE_LIMIT, "创建过于频繁", {
-            retry_after_sec: allowed.retryAfter,
-          })
-        );
+      return res.status(429).json(
+        buildError(ERROR_CODES.CUSTOMER_RATE_LIMIT, "创建过于频繁", {
+          retry_after_sec: allowed.retryAfter,
+        })
+      );
     }
 
     const {
@@ -127,6 +135,11 @@ router.post(
             },
             { transaction: t }
           );
+
+          // 强制：Agent 创建客户时，salesRepId 固定为当前 Agent
+          const salesRepFinal =
+            agent.userType === "agent" ? agent.id : salesRepId || agent.id;
+
           const newCustomer = await db.Customer.create(
             {
               customerName,
@@ -138,7 +151,15 @@ router.post(
               remark: remark || null,
               adminAccount,
               passwordHash: hashed,
-              salesRepId: salesRepId || agent.id,
+              salesRepId: salesRepFinal,
+              // 多租户/仓库作用域字段（若模型包含）
+              ...(db.Customer.rawAttributes?.tenant_id && req.user.tenant_id
+                ? { tenant_id: req.user.tenant_id }
+                : {}),
+              ...(db.Customer.rawAttributes?.warehouse_id &&
+              req.user.warehouse_id
+                ? { warehouse_id: req.user.warehouse_id }
+                : {}),
             },
             { transaction: t }
           );
@@ -190,7 +211,7 @@ router.post(
   }
 );
 
-// 客户列表（分页 + 只读审计）
+// 客户列表（仅能查看自己名下客户）
 router.get(
   "/",
   authenticate,
@@ -208,8 +229,14 @@ router.get(
           { companyName: { [db.Sequelize.Op.like]: `%${keyword}%` } },
         ];
       }
+      const { isAgent } = roleCtx(req);
+      if (isAgent) {
+        where.salesRepId = req.user.id;
+      }
+      const scopedWhere = applyScopeToWhere(where, db.Customer, req.user);
+
       const { rows, count } = await db.Customer.findAndCountAll({
-        where,
+        where: scopedWhere,
         order: [["created_at", "DESC"]],
         offset: (page - 1) * pageSize,
         limit: pageSize,
@@ -244,7 +271,7 @@ router.get(
   }
 );
 
-// 客户详情
+// 客户详情（仅能查看自己名下客户）
 router.get(
   "/:id",
   authenticate,
@@ -253,7 +280,18 @@ router.get(
     const startAt = Date.now();
     try {
       const { id } = req.params;
-      const customer = await db.Customer.findByPk(id, {
+      const idNum = Number(id);
+      if (!Number.isInteger(idNum) || idNum <= 0)
+        return res
+          .status(400)
+          .json(buildError(ERROR_CODES.VALIDATION_FAILED, "非法客户ID"));
+      const where = applyScopeToWhere({ id: idNum }, db.Customer, req.user);
+      const { isAgent } = roleCtx(req);
+      if (isAgent) {
+        where.salesRepId = req.user.id;
+      }
+      const customer = await db.Customer.findOne({
+        where,
         attributes: [
           "id",
           "customerName",
@@ -286,14 +324,19 @@ router.get(
   }
 );
 
-// 更新客户（基础资料 & 分配销售）
+// 更新客户（仅能操作自己名下客户）
 router.put(
   "/:id",
   authenticate,
-  checkPermission("customer.update"),
+  checkPermission("customer.edit"),
   async (req, res) => {
     try {
       const { id } = req.params;
+      const idNum = Number(id);
+      if (!Number.isInteger(idNum) || idNum <= 0)
+        return res
+          .status(400)
+          .json(buildError(ERROR_CODES.VALIDATION_FAILED, "非法客户ID"));
       const {
         customerName,
         companyName,
@@ -304,7 +347,12 @@ router.put(
         remark,
         salesRepId,
       } = req.body || {};
-      const customer = await db.Customer.findByPk(id);
+      const where = applyScopeToWhere({ id: idNum }, db.Customer, req.user);
+      const { isAgent } = roleCtx(req);
+      if (isAgent) {
+        where.salesRepId = req.user.id;
+      }
+      const customer = await db.Customer.findOne({ where });
       if (!customer)
         return res
           .status(404)
@@ -353,16 +401,26 @@ router.put(
   }
 );
 
-// 启用 / 停用
+// 启用 / 停用（仅能操作自己名下客户）
 router.post(
   "/:id/toggle",
   authenticate,
-  checkPermission("customer.update"),
+  checkPermission("customer.edit"),
   async (req, res) => {
     try {
       const { id } = req.params;
+      const idNum = Number(id);
+      if (!Number.isInteger(idNum) || idNum <= 0)
+        return res
+          .status(400)
+          .json(buildError(ERROR_CODES.VALIDATION_FAILED, "非法客户ID"));
       const { enable } = req.body;
-      const customer = await db.Customer.findByPk(id);
+      const where = applyScopeToWhere({ id: idNum }, db.Customer, req.user);
+      const { isAgent } = roleCtx(req);
+      if (isAgent) {
+        where.salesRepId = req.user.id;
+      }
+      const customer = await db.Customer.findOne({ where });
       if (!customer)
         return res
           .status(404)
@@ -385,30 +443,34 @@ router.post(
       res.json({ success: true, message: enable ? "已启用" : "已停用" });
     } catch (e) {
       console.error(e);
-      res
-        .status(500)
-        .json(
-          buildError(
-            enable
-              ? ERROR_CODES.CUSTOMER_ENABLE_FAILED
-              : ERROR_CODES.CUSTOMER_DISABLE_FAILED,
-            "操作失败"
-          )
-        );
+      const code =
+        req.body && req.body.enable
+          ? ERROR_CODES.CUSTOMER_ENABLE_FAILED
+          : ERROR_CODES.CUSTOMER_DISABLE_FAILED;
+      res.status(500).json(buildError(code, "操作失败"));
     }
   }
 );
 
-// 重置密码
+// 重置密码（仅能操作自己名下客户）
 router.post(
   "/:id/reset-password",
   authenticate,
-  checkPermission("customer.update"),
+  checkPermission("customer.edit"),
   async (req, res) => {
+    const t = await db.sequelize.transaction();
     try {
       const { id } = req.params;
+      const idNum = Number(id);
+      if (!Number.isInteger(idNum) || idNum <= 0) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json(buildError(ERROR_CODES.VALIDATION_FAILED, "非法客户ID"));
+      }
       const { newPassword } = req.body || {};
-      if (!newPassword || newPassword.length < 8)
+      if (!newPassword || newPassword.length < 8) {
+        await t.rollback();
         return res
           .status(400)
           .json(
@@ -417,23 +479,35 @@ router.post(
               "密码至少8位"
             )
           );
-      const customer = await db.Customer.findByPk(id);
-      if (!customer)
+      }
+      const where = applyScopeToWhere({ id: idNum }, db.Customer, req.user);
+      const { isAgent } = roleCtx(req);
+      if (isAgent) {
+        where.salesRepId = req.user.id;
+      }
+      const customer = await db.Customer.findOne({ where, transaction: t });
+      if (!customer) {
+        await t.rollback();
         return res
           .status(404)
           .json(buildError(ERROR_CODES.CUSTOMER_NOT_FOUND, "客户不存在"));
+      }
       const user = await db.User.findOne({
         where: { username: customer.adminAccount },
+        transaction: t,
       });
-      if (!user)
+      if (!user) {
+        await t.rollback();
         return res
           .status(404)
           .json(buildError(ERROR_CODES.CUSTOMER_NOT_FOUND, "绑定用户不存在"));
+      }
       const hash = await bcrypt.hash(newPassword, 10);
       user.password_hash = hash;
-      await user.save();
+      await user.save({ transaction: t });
       customer.passwordHash = hash;
-      await customer.save();
+      await customer.save({ transaction: t });
+      await t.commit();
       writeAudit({
         module: "agent",
         entityType: "Customer",
@@ -448,6 +522,7 @@ router.post(
       });
       res.json({ success: true, message: "密码已重置" });
     } catch (e) {
+      await t.rollback();
       console.error(e);
       res
         .status(500)

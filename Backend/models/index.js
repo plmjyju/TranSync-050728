@@ -40,17 +40,34 @@ const db = { sequelize, Sequelize };
 
 const files = await fs.readdir(__dirname);
 for (const file of files) {
-  if (file !== "index.js" && file.endsWith(".js")) {
-    const fullPath = path.resolve(__dirname, file);
+  if (file === "index.js" || !file.endsWith(".js")) continue;
+  const fullPath = path.resolve(__dirname, file);
+  try {
     const modelModule = await import(pathToFileURL(fullPath).href);
-    const modelDef = modelModule.default;
-    const model = modelDef(sequelize, Sequelize.DataTypes);
-    db[model.name] = model;
+    const modelDef = modelModule?.default;
+    if (typeof modelDef === "function") {
+      const model = modelDef(sequelize, Sequelize.DataTypes);
+      if (!model?.name) {
+        console.warn(`⚠️ 模型未返回有效实例: ${file}`);
+        continue;
+      }
+      db[model.name] = model;
+    } else {
+      console.warn(`⚠️ 跳过模型（未导出函数 default）：${file}`);
+    }
+  } catch (err) {
+    console.error(`❌ 加载模型失败: ${file} ->`, err.message);
   }
 }
 
 Object.values(db).forEach((model) => {
-  if (model.associate) model.associate(db);
+  if (model && typeof model.associate === "function") {
+    try {
+      model.associate(db);
+    } catch (err) {
+      console.error(`❌ 关联模型失败: ${model.name}`, err.message);
+    }
+  }
 });
 
 export default db;

@@ -1,0 +1,1346 @@
+{
+  "info": {
+    "name": "TranSync Complete API (AutoAuth)",
+    "_postman_id": "6f9b7d6c-1c93-4a53-9d0c-3c84a0e8e0ad",
+    "description": "Complete API collection with folder-level auto login to fetch tokens for OMP/Agent/Warehouse/Client/System.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "system_username", "value": "admin_test" },
+    { "key": "system_password", "value": "Test@12345" },
+    { "key": "omp_username", "value": "admin_test" },
+    { "key": "omp_password", "value": "Test@12345" },
+    { "key": "agent_username", "value": "agent_test" },
+    { "key": "agent_password", "value": "Test@12345" },
+    { "key": "warehouse_username", "value": "admin_test" },
+    { "key": "warehouse_password", "value": "Test@12345" },
+    { "key": "client_username", "value": "client_test" },
+    { "key": "client_password", "value": "Test@12345" },
+    { "key": "forecast_id", "value": "" },
+    { "key": "inbond_id", "value": "" },
+    { "key": "package_id", "value": "" },
+    { "key": "package_code", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "System Login (/api/auth/login)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{system_username}}\",\n  \"password\": \"{{system_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', ()=> pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('token_system', json.token || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OMP Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/common/auth/login/omp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "auth", "login", "omp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{omp_username}}\",\n  \"password\": \"{{omp_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', ()=> pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('token_omp', json.token || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Agent Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/common/auth/login/agent",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "auth", "login", "agent"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{agent_username}}\",\n  \"password\": \"{{agent_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', ()=> pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('token_agent', json.token || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Warehouse Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/common/auth/login/warehouse",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "auth", "login", "warehouse"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{warehouse_username}}\",\n  \"password\": \"{{warehouse_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', ()=> pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('token_warehouse', json.token || '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Client Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/client/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{client_username}}\",\n  \"password\": \"{{client_password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', ()=> pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('token_client', json.token || '');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Common (uses token_system)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.environment.get('token_system')){",
+              "  pm.sendRequest({ url: pm.variables.get('base_url') + '/api/auth/login', method: 'POST', header: { 'Content-Type':'application/json' }, body: { mode:'raw', raw: JSON.stringify({ username: pm.variables.get('system_username'), password: pm.variables.get('system_password') }) } }, function(err, res){",
+              "    if(!err){ try { var j=res.json(); pm.environment.set('token_system', j.token);} catch(e){} }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/common/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "health"]
+            }
+          }
+        },
+        {
+          "name": "Tax Types",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_system}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/common/tax-types",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "tax-types"]
+            }
+          }
+        },
+        {
+          "name": "Operation Requirements",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_system}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/common/operation-requirements",
+              "host": ["{{base_url}}"],
+              "path": ["api", "common", "operation-requirements"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "OMP (auto token_omp)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.environment.get('token_omp')){",
+              "  pm.sendRequest({ url: pm.variables.get('base_url') + '/api/common/auth/login/omp', method: 'POST', header: { 'Content-Type':'application/json' }, body: { mode:'raw', raw: JSON.stringify({ username: pm.variables.get('omp_username'), password: pm.variables.get('omp_password') }) } }, function(err, res){",
+              "    if(!err){ try { var j=res.json(); pm.environment.set('token_omp', j.token);} catch(e){} }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_omp}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/omp/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "omp", "roles"]
+            }
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_omp}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/omp/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "omp", "users"]
+            }
+          }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_omp}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/omp/create-customer",
+              "host": ["{{base_url}}"],
+              "path": ["api", "omp", "create-customer"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"ACME\",\n  \"adminAccount\": \"client001\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Agent (auto token_agent)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.environment.get('token_agent')){",
+              "  pm.sendRequest({ url: pm.variables.get('base_url') + '/api/common/auth/login/agent', method: 'POST', header: { 'Content-Type':'application/json' }, body: { mode:'raw', raw: JSON.stringify({ username: pm.variables.get('agent_username'), password: pm.variables.get('agent_password') }) } }, function(err, res){",
+              "    if(!err){ try { var j=res.json(); pm.environment.set('token_agent', j.token);} catch(e){} }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Create Forecast",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mawb\": \"\",\n  \"flight_no\": \"MU588\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Forecasts",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts"]
+            }
+          }
+        },
+        {
+          "name": "Forecast - Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts", "{{forecast_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Forecast - Update MAWB",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/mawb",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts", "{{forecast_id}}", "mawb"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mawb\": \"123-45678901\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forecast - Transition",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/transition",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "forecasts",
+                "{{forecast_id}}",
+                "transition"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_status\": \"palletizing\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forecast - Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/submit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts", "{{forecast_id}}", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Forecast - Assign HAWB (single client)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/hawb",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "forecasts", "{{forecast_id}}", "hawb"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": 1,\n  \"hawb\": \"HAWB-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forecast - Assign HAWB (batch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/batch-hawb",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "forecasts",
+                "{{forecast_id}}",
+                "batch-hawb"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assignments\": [\n    { \"client_id\": 1, \"hawb\": \"HAWB-A\" },\n    { \"client_id\": 2, \"hawb\": \"HAWB-B\" }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Forecast - Clearance Transition",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/forecasts/{{forecast_id}}/clearance/transition",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "forecasts",
+                "{{forecast_id}}",
+                "clearance",
+                "transition"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_status\": \"in_progress\",\n  \"reason\": \"docs submitted\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Inbonds - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/inbonds?page=1&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "inbonds"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', ()=> pm.response.to.have.status(200));",
+                  "try{ const j=pm.response.json(); if(j.data && j.data.length){ pm.environment.set('inbond_id', j.data[0].id); } }catch(e){}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inbond - Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/inbonds/{{inbond_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "inbonds", "{{inbond_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Inbond - Arrive",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/inbonds/{{inbond_id}}/arrive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "inbonds", "{{inbond_id}}", "arrive"]
+            }
+          }
+        },
+        {
+          "name": "Inbonds - Timezones",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/inbonds/timezones",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "inbonds", "timezones"]
+            }
+          }
+        },
+        {
+          "name": "Packages - Scan Receive",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/packages/scan/receive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "packages", "scan", "receive"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"package_code\": \"{{package_code}}\",\n  \"warehouse_location\": \"A1-01\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Packages - Scan Receive (batch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/packages/scan/receive-batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "packages", "scan", "receive-batch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"package_codes\": [ \"{{package_code}}\" ],\n  \"warehouse_location\": \"A1-01\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Customers - Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "customers"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerName\": \"ACME\",\n  \"companyName\": \"ACME LTD\",\n  \"adminAccount\": \"client002\",\n  \"password\": \"Pass@1234\",\n  \"contactName\": \"Alice\",\n  \"telephone\": \"123456789\",\n  \"email\": \"alice@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Customers - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers?page=1&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "customers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', ()=> pm.response.to.have.status(200));",
+                  "try{ const j=pm.response.json(); if(j.customers && j.customers.length){ pm.environment.set('agent_customer_id', j.customers[0].id); } }catch(e){}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer - Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers/{{agent_customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "customers", "{{agent_customer_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Customer - Update",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers/{{agent_customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "customers", "{{agent_customer_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"remark\": \"updated by postman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Customer - Toggle Enable",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers/{{agent_customer_id}}/toggle",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "customers",
+                "{{agent_customer_id}}",
+                "toggle"
+              ]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"enable\": true\n}" }
+          }
+        },
+        {
+          "name": "Customer - Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/customers/{{agent_customer_id}}/reset-password",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "customers",
+                "{{agent_customer_id}}",
+                "reset-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"NewPass123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Operation Requirements - By Customer",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/operation-requirements/{{agent_customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "operation-requirements",
+                "{{agent_customer_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Operation Requirements - Bind (placeholder)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/operation-requirements/{{agent_customer_id}}/bind",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "agent",
+                "operation-requirements",
+                "{{agent_customer_id}}",
+                "bind"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Packages - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_agent}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/agent/packages?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "agent", "packages"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', ()=> pm.response.to.have.status(200));",
+                  "try {",
+                  "  const j = pm.response.json();",
+                  "  const arr = (j && (j.packages || j.data || j.rows)) || [];",
+                  "  if (arr.length) {",
+                  "    const p = arr[0];",
+                  "    if (p.id) pm.environment.set('package_id', p.id);",
+                  "    if (p.package_code) pm.environment.set('package_code', p.package_code);",
+                  "    if (p.inbond_id) pm.environment.set('inbond_id', p.inbond_id);",
+                  "  }",
+                  "} catch(e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Warehouse (auto token_warehouse)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.environment.get('token_warehouse')){",
+              "  pm.sendRequest({ url: pm.variables.get('base_url') + '/api/common/auth/login/warehouse', method: 'POST', header: { 'Content-Type':'application/json' }, body: { mode:'raw', raw: JSON.stringify({ username: pm.variables.get('warehouse_username'), password: pm.variables.get('warehouse_password') }) } }, function(err, res){",
+              "    if(!err){ try { var j=res.json(); pm.environment.set('token_warehouse', j.token);} catch(e){} }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Delivery Orders - List (sample)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_warehouse}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/warehouse/delivery-orders?status=created",
+              "host": ["{{base_url}}"],
+              "path": ["api", "warehouse", "delivery-orders"],
+              "query": [{ "key": "status", "value": "created" }]
+            }
+          }
+        },
+        {
+          "name": "Split Orders - List (sample)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_warehouse}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/warehouse/split-orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "warehouse", "split-orders"]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Client (auto token_client)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.environment.get('token_client')){",
+              "  pm.sendRequest({ url: pm.variables.get('base_url') + '/api/client/login', method: 'POST', header: { 'Content-Type':'application/json' }, body: { mode:'raw', raw: JSON.stringify({ username: pm.variables.get('client_username'), password: pm.variables.get('client_password') }) } }, function(err, res){",
+              "    if(!err){ try { var j=res.json(); pm.environment.set('token_client', j.token);} catch(e){} }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Client Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", ""]
+            }
+          }
+        },
+        {
+          "name": "Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Test",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/test",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "test"]
+            }
+          }
+        },
+        {
+          "name": "Operation Requirements (client view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/operation-requirements",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "operation-requirements"]
+            }
+          }
+        },
+        {
+          "name": "Forecasts - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/forecasts",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "forecasts"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', ()=> pm.response.to.have.status(200));",
+                  "try{ const j=pm.response.json(); if(j.forecasts && j.forecasts.length){ pm.environment.set('forecast_id', j.forecasts[0].id); } }catch(e){}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forecasts - Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/forecasts/{{forecast_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "forecasts", "{{forecast_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Forecasts - Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/forecasts/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "forecasts", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Timezones",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/timezones",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "timezones"]
+            }
+          }
+        },
+        {
+          "name": "Inbond - Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/create-inbond",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "create-inbond"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shipping_type\": \"air\",\n  \"clearance_type\": \"general_trade\",\n  \"arrival_method\": \"truck\",\n  \"remark\": \"demo create\"\n}"
+            },
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "type": "text/javascript",
+                  "exec": [
+                    "pm.test('201', ()=> pm.response.to.have.status(201));",
+                    "const j=pm.response.json(); if(j && j.inbond){ pm.environment.set('inbond_id', j.inbond.id); }"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Inbonds - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbonds?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "inbonds"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "type": "text/javascript",
+                  "exec": [
+                    "pm.test('200', ()=> pm.response.to.have.status(200));",
+                    "try{ const j=pm.response.json(); if(j.inbonds && j.inbonds.length){ pm.environment.set('inbond_id', j.inbonds[0].id); } }catch(e){}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Inbond - Get",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "inbond", "{{inbond_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Inbond - Update",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "inbond", "{{inbond_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"arrival_method\": \"truck_updated\",\n  \"remark\": \"demo update\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Inbond - Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}/submit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "inbond", "{{inbond_id}}", "submit"]
+            }
+          }
+        },
+        {
+          "name": "Packages - Create (single)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}/add-package",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "client",
+                "inbond",
+                "{{inbond_id}}",
+                "add-package"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operation_requirement_code\": \"PU\",\n  \"length_cm\": 10,\n  \"width_cm\": 10,\n  \"height_cm\": 10,\n  \"weight_kg\": 1.2,\n  \"split_action\": \"direct\",\n  \"remark\": \"demo pkg\"\n}"
+            },
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "type": "text/javascript",
+                  "exec": [
+                    "pm.test('201', ()=> pm.response.to.have.status(201));",
+                    "const j=pm.response.json(); if(j && j.package){ pm.environment.set('package_id', j.package.id); pm.environment.set('package_code', j.package.package_code); }"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Packages - Create (batch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}/add-packages-batch",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "client",
+                "inbond",
+                "{{inbond_id}}",
+                "add-packages-batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packages\": [\n    { \"operation_requirement_code\": \"PU\", \"weight_kg\": 1.1 },\n    { \"operation_requirement_code\": \"S-USPS\", \"weight_kg\": 0.8 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Packages - List by Inbond",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/inbond/{{inbond_id}}/packages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "inbond", "{{inbond_id}}", "packages"]
+            }
+          }
+        },
+        {
+          "name": "Packages - Query (paged)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/packages?page=1&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "packages"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Package - Update",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/package/{{package_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "package", "{{package_id}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_kg\": 1.5,\n  \"remark\": \"updated\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Packages - Update Batch",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/packages-batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "packages-batch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packages\": [ { \"id\": {{package_id}}, \"remark\": \"batch upd\" } ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Package - Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/package/{{package_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "package", "{{package_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Packages - Delete Batch",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/packages-batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "packages-batch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageIds\": [ {{package_id}} ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Package Item - Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/package/{{package_code}}/add-item",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "client",
+                "package",
+                "{{package_code}}",
+                "add-item"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tracking_no\": \"T123\",\n  \"receiver_name\": \"John\",\n  \"receiver_country\": \"US\",\n  \"quantity\": 1,\n  \"product_name_en\": \"Gadget\",\n  \"total_price\": 10\n}"
+            }
+          }
+        },
+        {
+          "name": "Package Items - List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/package/{{package_code}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["api", "client", "package", "{{package_code}}", "items"]
+            }
+          }
+        },
+        {
+          "name": "Package - Get by Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_client}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/package/by-code/{{package_code}}",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "client",
+                "package",
+                "by-code",
+                "{{package_code}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

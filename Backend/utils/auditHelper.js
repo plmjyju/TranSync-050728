@@ -74,6 +74,7 @@ export const PACKAGE_ITEM_AUDIT_FIELDS = [
   "hs_code",
   "unit_price",
   "total_price",
+  "material",
 ];
 
 export const FORECAST_AUDIT_FIELDS = [

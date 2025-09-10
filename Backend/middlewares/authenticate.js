@@ -63,6 +63,9 @@ const authenticate = async (req, res, next) => {
         roleName: decoded.roleName,
         roleDisplayName: decoded.roleDisplayName,
         permissions: decoded.permissions || [],
+        // 新增：多租户/仓库作用域
+        tenant_id: decoded.tenant_id || decoded.tenantId || null,
+        warehouse_id: decoded.warehouse_id || decoded.warehouseId || null,
       };
     }
 

@@ -23,6 +23,7 @@ import {
 import { buildError } from "../../utils/errors.js";
 import { getRedis } from "../../utils/redisClient.js";
 import { logRead, logViewDetail } from "../../utils/logRead.js";
+import { applyScopeToWhere } from "../../utils/scope.js";
 
 const router = express.Router();
 
@@ -239,6 +240,7 @@ router.get(
       if (code) where.forecast_code = { [db.Sequelize.Op.like]: `${code}%` };
       if (mawb) where.mawb = mawb;
       if (flight_no) where.flight_no = flight_no;
+      where = applyScopeToWhere(where, db.Forecast, req.user);
       const { rows, count } = await db.Forecast.findAndCountAll({
         where,
         order: [["created_at", "DESC"]],
@@ -297,7 +299,11 @@ router.get(
     try {
       const { id } = req.params;
       const forecast = await db.Forecast.findOne({
-        where: { id, agent_id: req.user.id },
+        where: applyScopeToWhere(
+          { id, agent_id: req.user.id },
+          db.Forecast,
+          req.user
+        ),
         include: [
           {
             model: db.Package,

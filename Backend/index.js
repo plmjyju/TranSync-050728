@@ -23,6 +23,7 @@ const { default: db } = await import("./models/index.js");
 const { createClientAppRouter } = await import(
   "./utils/createClientAppRouter.js"
 );
+const { metricsMiddleware } = await import("./metrics/prometheus.js");
 
 // 根据环境变量决定是否同步数据库
 if (config.database.syncDb) {
@@ -36,6 +37,36 @@ if (config.database.syncDb) {
 const app = express();
 app.use(express.json());
 
+// CORS 中间件（基于配置）
+const allowedOrigins = (config.security.corsOrigin || "*")
+  .split(",")
+  .map((s) => s.trim());
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  let allowOrigin = "*";
+  if (!allowedOrigins.includes("*")) {
+    if (origin && allowedOrigins.includes(origin)) {
+      allowOrigin = origin;
+    } else {
+      allowOrigin = allowedOrigins[0] || "";
+    }
+    res.header("Vary", "Origin");
+  }
+  res.header("Access-Control-Allow-Origin", allowOrigin);
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PATCH,PUT,DELETE,OPTIONS"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With"
+  );
+  // 如使用 cookie 跨域再开启 credentials，此处默认关闭避免与 '*' 冲突
+  // res.header("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 // 公共路由（不需要特定角色权限检查）
 app.use("/api/common", commonRoutes);
 
@@ -48,6 +79,8 @@ await createClientAppRouter(app, "wms");
 await createClientAppRouter(app, "warehouse");
 await createClientAppRouter(app, "agent");
 await createClientAppRouter(app, "client");
+
+app.get("/metrics", metricsMiddleware);
 
 (async () => {
   try {

@@ -11,24 +11,30 @@ export default (sequelize, DataTypes) => {
       client_id: {
         type: DataTypes.BIGINT,
         allowNull: false,
-        references: { model: "users", key: "id" },
+        // 外键应指向 customers.id（历史上曾指向 users.id）
+        references: { model: "customers", key: "id" },
       },
       shipping_type: { type: DataTypes.ENUM("air", "sea"), allowNull: false },
       arrival_method: { type: DataTypes.STRING(20) },
       clearance_type: {
         type: DataTypes.ENUM(
-          "general_trade", // 一般贸易
-          "bonded_warehouse", // 保税仓库
-          "cross_border_ecom", // 跨境电商
-          "personal_items", // 个人物品
-          "samples", // 样品
-          "temporary_import", // 暂时进口
-          "duty_free", // 免税
-          "re_import" // 复进口
+          // 兼容旧值
+          "general_trade",
+          "bonded_warehouse",
+          "cross_border_ecom",
+          "personal_items",
+          "samples",
+          "temporary_import",
+          "duty_free",
+          "re_import",
+          // 新增代码型值
+          "T01",
+          "T11",
+          "T06-T01"
         ),
         allowNull: false,
         defaultValue: "general_trade",
-        comment: "清关类型",
+        comment: "清关类型/代码（兼容旧值 + 新增代码）",
       },
       tax_type_id: {
         type: DataTypes.BIGINT,
@@ -37,10 +43,32 @@ export default (sequelize, DataTypes) => {
         comment: "税务类型ID",
       },
       status: {
-        type: DataTypes.ENUM("draft", "submitted", "arrived", "completed"),
+        type: DataTypes.ENUM(
+          "draft",
+          "submitted",
+          // 兼容旧 arrived/completed，同时新增更贴近业务语义的状态
+          "arrived",
+          "completed",
+          "warehouse_processing", // 仓库处理中
+          "checked_in", // 已入库
+          "exception" // 异常
+        ),
         defaultValue: "draft",
       },
       remark: { type: DataTypes.TEXT },
+      // 新增：清关信息汇总（多 item 聚合结果，可用于展示与导出）
+      clearance_summary_json: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment:
+          "清关信息条目汇总(JSON数组，每项与 InbondDeclarationItem 字段类似)",
+      },
+      // 新增：最后一次相关包裹扫描时间（任一关联包裹扫描时更新）
+      last_package_scan_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "该入库单下最后一次包裹扫描时间",
+      },
       requirement_summary_json: {
         type: DataTypes.TEXT,
         allowNull: true,
@@ -73,7 +101,11 @@ export default (sequelize, DataTypes) => {
   );
 
   Inbond.associate = (models) => {
-    Inbond.belongsTo(models.User, { foreignKey: "client_id", as: "client" });
+    // 修正为关联 Customer，别名保持 client
+    Inbond.belongsTo(models.Customer, {
+      foreignKey: "client_id",
+      as: "client",
+    });
     // Inbond.belongsTo(models.Warehouse, {
     //   foreignKey: "warehouse_id",
     //   as: "warehouse",
@@ -83,6 +115,11 @@ export default (sequelize, DataTypes) => {
       as: "taxType",
     });
     Inbond.hasMany(models.Package, { foreignKey: "inbond_id", as: "packages" });
+    // 新增：清关条目关联
+    Inbond.hasMany(models.InbondDeclarationItem, {
+      foreignKey: "inbond_id",
+      as: "declarationItems",
+    });
   };
 
   return Inbond;

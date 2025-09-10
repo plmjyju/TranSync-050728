@@ -42,6 +42,13 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "created",
       },
+      // multi-tenant fields
+      tenant_id: { type: DataTypes.BIGINT, allowNull: true, comment: "租户ID" },
+      warehouse_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: "仓库ID",
+      },
       assigned_user_id: {
         type: DataTypes.BIGINT,
         allowNull: true,
@@ -75,6 +82,12 @@ export default (sequelize, DataTypes) => {
         { fields: ["awb"] },
         { fields: ["status"] },
         { fields: ["split_order_number"], unique: true },
+        { fields: ["tenant_id"] },
+        { fields: ["warehouse_id"] },
+        {
+          fields: ["tenant_id", "warehouse_id", "status"],
+          name: "idx_split_orders_tenant_wh_status",
+        },
       ],
     }
   );

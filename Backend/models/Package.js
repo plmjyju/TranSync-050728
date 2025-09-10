@@ -161,12 +161,18 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         references: { model: "users", key: "id" },
       },
+      // 新增: 最近一次扫描时间（用于异常判断/监控）
+      last_scanned_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: "最近一次扫描时间（绑定板、入库扫描等动作更新）",
+      },
       // 新增: 单一操作需求外键（由原多对多精简）
       operation_requirement_id: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: false, // 开发直接收紧为 NOT NULL
         references: { model: "operation_requirements", key: "id" },
-        comment: "单一操作需求ID (多对多降级后)",
+        comment: "单一操作需求ID (多对多已下线)",
       },
       // 交付/出库记录
       delivered_at: {
@@ -179,6 +185,12 @@ export default (sequelize, DataTypes) => {
         allowNull: true,
         references: { model: "users", key: "id" },
         comment: "执行交付操作的用户ID",
+      },
+      tenant_id: { type: DataTypes.BIGINT, allowNull: true, comment: "租户ID" },
+      warehouse_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: "仓库ID",
       },
     },
     {
@@ -196,6 +208,13 @@ export default (sequelize, DataTypes) => {
         { fields: ["inbound_status"] },
         { fields: ["sorting_status"] },
         { fields: ["original_pallet_number"] },
+        { fields: ["tenant_id"] },
+        { fields: ["warehouse_id"] },
+        { fields: ["last_scanned_at"], name: "idx_pkg_last_scanned_at" },
+        {
+          fields: ["tenant_id", "warehouse_id", "status"],
+          name: "idx_package_tenant_wh_status",
+        },
       ],
     }
   );

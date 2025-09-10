@@ -51,7 +51,8 @@ async function persistBatch(batch) {
     batch.map((t) => ({
       module: t.module,
       entity_type: t.entityType,
-      entity_id: t.entityId,
+      // entity_id 为只读列表等场景可能不存在，统一落 0 以满足 NOT NULL 约束
+      entity_id: t.entityId == null ? 0 : t.entityId,
       action: t.action,
       user_id: t.user?.id || null,
       user_type: t.user?.userType || null,

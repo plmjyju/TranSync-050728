@@ -33,10 +33,14 @@ export default (sequelize, DataTypes) => {
       createdAt: "created_at",
       updatedAt: "updated_at",
       indexes: [
-        { unique: true, fields: ["customer_id", "operation_requirement_id"] },
-        { fields: ["customer_id"] },
-        { fields: ["operation_requirement_id"] },
-        { fields: ["is_enabled"] },
+        {
+          name: "uq_cust_opreq",
+          unique: true,
+          fields: ["customer_id", "operation_requirement_id"],
+        },
+        { name: "idx_cust_opreq_cust", fields: ["customer_id"] },
+        { name: "idx_cust_opreq_req", fields: ["operation_requirement_id"] },
+        { name: "idx_cust_opreq_enabled", fields: ["is_enabled"] },
       ],
     }
   );

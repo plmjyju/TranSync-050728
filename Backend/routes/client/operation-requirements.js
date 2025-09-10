@@ -3,10 +3,10 @@ import db from "../../models/index.js";
 import authenticate from "../../middlewares/authenticate.js";
 
 const router = express.Router();
-const { OperationRequirement, UserOperationRequirement } = db;
+const { OperationRequirement } = db;
 
 // GET /api/client/operation-requirements
-// 列出当前客户端用户可见/可选的 OperationRequirements
+// 简化：列出当前可用的处理方式（不做白名单/可见性复杂逻辑）
 router.get("/operation-requirements", authenticate, async (req, res) => {
   try {
     if (!req.user || req.user.userType !== "client") {
@@ -15,60 +15,24 @@ router.get("/operation-requirements", authenticate, async (req, res) => {
         .json({ success: false, message: "仅限客户端用户" });
     }
 
-    const userId = req.user.id;
-
-    // 是否存在用户级白名单绑定
-    const bindingCount = await UserOperationRequirement.count({
-      where: { user_id: userId, is_enabled: true },
+    const list = await OperationRequirement.findAll({
+      where: { is_active: true },
+      order: [
+        ["sort_order", "ASC"],
+        ["requirement_code", "ASC"],
+      ],
     });
 
-    let requirements;
-    if (bindingCount > 0) {
-      // 使用白名单
-      requirements = await OperationRequirement.findAll({
-        include: [
-          {
-            model: UserOperationRequirement,
-            as: "userBindings",
-            where: { user_id: userId, is_enabled: true },
-            required: true,
-            attributes: ["is_selectable", "is_enabled"],
-          },
-        ],
-        where: { is_active: true },
-        order: [
-          ["sort_order", "ASC"],
-          ["id", "ASC"],
-        ],
-      });
-    } else {
-      // 全局可见策略
-      requirements = await OperationRequirement.findAll({
-        where: { is_active: true, is_client_visible: true },
-        order: [
-          ["sort_order", "ASC"],
-          ["id", "ASC"],
-        ],
-      });
-    }
-
-    const data = requirements.map((r) => ({
+    const data = list.map((r) => ({
       id: r.id,
       requirement_code: r.requirement_code,
       requirement_name: r.requirement_name,
-      distribution_mode: r.distribution_mode,
-      carrier_channel: r.carrier_channel,
-      delivery_destination_type: r.delivery_destination_type,
-      delivery_destination_code: r.delivery_destination_code,
-      delivery_destination_name: r.delivery_destination_name,
-      is_client_selectable:
-        bindingCount > 0
-          ? r.userBindings[0].is_selectable
-          : r.is_client_selectable,
-      is_client_visible: bindingCount > 0 ? true : r.is_client_visible,
-      category: r.category,
-      priority_level: r.priority_level,
+      description: r.description,
+      handling_mode: r.handling_mode,
+      carrier: r.carrier,
+      label_abbr: r.label_abbr,
       sort_order: r.sort_order,
+      is_active: r.is_active,
     }));
 
     res.json({ success: true, count: data.length, data });

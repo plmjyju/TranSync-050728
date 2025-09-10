@@ -105,6 +105,20 @@ export const permissionsSeed = [
     display_name: "批量导出包裹",
     module: "agent",
   },
+  // --- 新增: Agent 包裹收货权限，匹配 routes/agent/package.js ---
+  { name: "agent.package.receive", display_name: "包裹收货", module: "agent" },
+
+  // --- 新增: Agent Inbond 权限，匹配 routes/agent/inbond.js ---
+  {
+    name: "agent.inbond.view",
+    display_name: "查看入仓单(货代)",
+    module: "agent",
+  },
+  {
+    name: "agent.inbond.arrive",
+    display_name: "到车/到港登记",
+    module: "agent",
+  },
 
   // ========== HAWB权限 (Agent) ==========
   { name: "agent.hawb.view", display_name: "查看HAWB", module: "agent" },
@@ -135,7 +149,7 @@ export const permissionsSeed = [
   },
   {
     name: "client.package.edit",
-    display_name: "编辑包裹信息",
+    display_name: "编辑包裹信息(旧)",
     module: "client",
   },
   {
@@ -152,6 +166,44 @@ export const permissionsSeed = [
   {
     name: "client.invoice.download",
     display_name: "下载账单",
+    module: "client",
+  },
+
+  // --- 新增: Client Inbond 权限，匹配 routes/client/inbond.js ---
+  { name: "client.inbond.view", display_name: "查看入仓单", module: "client" },
+  {
+    name: "client.inbond.create",
+    display_name: "创建入仓单",
+    module: "client",
+  },
+  {
+    name: "client.inbond.update",
+    display_name: "更新入仓单",
+    module: "client",
+  },
+
+  // --- 新增: Client Package 细粒度权限，匹配 routes/client/package.js ---
+  { name: "client.package.create", display_name: "创建包裹", module: "client" },
+  { name: "client.package.update", display_name: "更新包裹", module: "client" },
+  { name: "client.package.delete", display_name: "删除包裹", module: "client" },
+  {
+    name: "client.package.item.add",
+    display_name: "新增包裹子件",
+    module: "client",
+  },
+  {
+    name: "client.package.item.view",
+    display_name: "查看包裹子件",
+    module: "client",
+  },
+  {
+    name: "client.package.item.update",
+    display_name: "更新包裹子件",
+    module: "client",
+  },
+  {
+    name: "client.package.item.delete",
+    display_name: "删除包裹子件",
     module: "client",
   },
 

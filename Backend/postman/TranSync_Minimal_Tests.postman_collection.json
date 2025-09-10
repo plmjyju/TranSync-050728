@@ -1,0 +1,72 @@
+{
+  "info": {
+    "name": "TranSync Minimal Tests",
+    "_postman_id": "0d6d8b68-9c5d-4b4e-9c3f-6c2e6b0d9d7a",
+    "description": "Minimal smoke tests for login and operation-requirements listing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login (System User)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "login"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin_test\",\n  \"password\": \"Test@12345\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('login success', function () {",
+              "  pm.response.to.have.status(200);",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.environment.set('token', json.token);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Common - OperationRequirements List",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{base_url}}/api/common/operation-requirements",
+          "host": ["{{base_url}}"],
+          "path": ["api", "common", "operation-requirements"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('list ok', function () {",
+              "  pm.response.to.have.status(200);",
+              "  var json = pm.response.json();",
+              "  pm.expect(json.success).to.eql(true);",
+              "  pm.expect(Array.isArray(json.data || json.requirements || json)).to.eql(true);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ],
+  "event": [],
+  "variable": [{ "key": "base_url", "value": "http://localhost:3000" }]
+}

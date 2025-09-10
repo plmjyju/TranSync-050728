@@ -19,7 +19,7 @@ import db from "../../models/index.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { recordSystemActivity } from "../../utils/recordSystemActivity.js";
-import { authenticate } from "../../middleware/auth.js";
+import { authenticate } from "../../middlewares/authenticate.js";
 import config from "../../config/environment.js";
 
 const router = express.Router();

@@ -1,6 +1,6 @@
 import express from "express";
 import db from "../../models/index.js";
-import { authenticate } from "../../middleware/auth.js";
+import { authenticate } from "../../middlewares/authenticate.js";
 import { recordSystemActivity } from "../../utils/recordSystemActivity.js";
 
 const router = express.Router();
@@ -190,11 +190,9 @@ router.post("/toggle-role-status", authenticate, async (req, res) => {
     );
 
     await t.commit();
-    return res
-      .status(200)
-      .json({
-        message: `Role ${status ? "enabled" : "disabled"} successfully`,
-      });
+    return res.status(200).json({
+      message: `Role ${status ? "enabled" : "disabled"} successfully`,
+    });
   } catch (err) {
     await t.rollback();
     console.error(err);

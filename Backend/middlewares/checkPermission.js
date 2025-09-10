@@ -50,8 +50,12 @@ const checkPermission = (permissionName) => {
     const user = req.user;
 
     try {
-      // 新的token方式：直接从token中验证权限
-      if (user.permissions && Array.isArray(user.permissions)) {
+      // 新的token方式：仅当 token.permissions 为非空数组时才直接使用
+      if (
+        user.permissions &&
+        Array.isArray(user.permissions) &&
+        user.permissions.length > 0
+      ) {
         console.log(`🔍 权限检查: ${permissionName} - 从token验证`);
 
         if (user.permissions.includes(permissionName)) {
@@ -61,28 +65,41 @@ const checkPermission = (permissionName) => {
           console.log(
             `❌ 权限验证失败: ${permissionName}, 用户权限: [${user.permissions
               .slice(0, 5)
-              .join(", ")}...]`
+              .join(", ")}]`
           );
           return res.status(403).json({
             success: false,
             message: `权限不足：需要 '${permissionName}' 权限`,
+            code: "PERMISSION_DENIED",
             error_code: "PERMISSION_DENIED",
+            required_permission: permissionName,
           });
         }
       }
 
-      // 客户端用户兼容处理（旧的token方式）
+      // 客户端用户兼容处理（旧的/无权限数组的token）
       if (user.userType === "client") {
         const clientPermissions = [
-          "client.access", // 客户端系统访问权限
+          "client.access",
           "client.dashboard.view",
           "client.forecast.view",
           "client.package.view",
+          // 细粒度包裹权限（routes/client/package.js）
+          "client.package.create",
+          "client.package.update",
+          "client.package.delete",
+          "client.package.item.add",
+          "client.package.item.view",
+          // 新增：包裹明细更新/删除
+          "client.package.item.update",
+          "client.package.item.delete",
+          // 兼容历史
           "client.package.edit",
           "client.package.track",
           "client.statistics.view",
           "client.invoice.view",
-          "client.invoice.download", // VIP客户才有的权限需要角色控制
+          "client.invoice.download",
+          // 入仓单权限（routes/client/inbond.js）
           "client.inbond.view",
           "client.inbond.create",
           "client.inbond.update",
@@ -93,26 +110,31 @@ const checkPermission = (permissionName) => {
         } else {
           return res.status(403).json({
             success: false,
-            message: `权限不足：需要'${permissionName}'权限`,
+            message: `权限不足：需要 '${permissionName}' 权限`,
+            code: "PERMISSION_DENIED",
             error_code: "PERMISSION_DENIED",
+            required_permission: permissionName,
           });
         }
       }
 
       // 其他用户类型需要检查缓存/数据库权限
-      if (!user.role_id) {
+      if (!user.role_id && !user.roleId) {
         return res.status(403).json({
           success: false,
           message: "用户未分配角色，无法访问系统",
+          code: "NO_ROLE_ASSIGNED",
           error_code: "NO_ROLE_ASSIGNED",
         });
       }
 
-      const cached = await getRolePermissionsCached(user.role_id);
+      const roleId = user.role_id || user.roleId; // 兼容不同字段
+      const cached = await getRolePermissionsCached(roleId);
       if (!cached) {
         return res.status(403).json({
           success: false,
           message: "用户角色不存在",
+          code: "ROLE_NOT_FOUND",
           error_code: "ROLE_NOT_FOUND",
         });
       }
@@ -127,7 +149,8 @@ const checkPermission = (permissionName) => {
 
       return res.status(403).json({
         success: false,
-        message: `权限不足：需要'${permissionName}'权限`,
+        message: `权限不足：需要 '${permissionName}' 权限`,
+        code: "PERMISSION_DENIED",
         error_code: "PERMISSION_DENIED",
         user_role: cached.displayName,
         required_permission: permissionName,
@@ -137,6 +160,7 @@ const checkPermission = (permissionName) => {
       return res.status(500).json({
         success: false,
         message: "权限检查失败",
+        code: "PERMISSION_CHECK_ERROR",
         error_code: "PERMISSION_CHECK_ERROR",
       });
     }
@@ -153,6 +177,7 @@ const checkMultiplePermissions = (permissions) => {
         return res.status(403).json({
           success: false,
           message: "用户未分配角色",
+          code: "NO_ROLE_ASSIGNED",
           error_code: "NO_ROLE_ASSIGNED",
         });
       }
@@ -165,6 +190,7 @@ const checkMultiplePermissions = (permissions) => {
         return res.status(403).json({
           success: false,
           message: "用户角色不存在",
+          code: "ROLE_NOT_FOUND",
           error_code: "ROLE_NOT_FOUND",
         });
       }
@@ -187,6 +213,7 @@ const checkMultiplePermissions = (permissions) => {
         return res.status(403).json({
           success: false,
           message: `权限不足：缺少权限 ${missingPermissions.join(", ")}`,
+          code: "MULTIPLE_PERMISSIONS_DENIED",
           error_code: "MULTIPLE_PERMISSIONS_DENIED",
           missing_permissions: missingPermissions,
         });
@@ -200,6 +227,7 @@ const checkMultiplePermissions = (permissions) => {
       return res.status(500).json({
         success: false,
         message: "权限检查失败",
+        code: "PERMISSION_CHECK_ERROR",
         error_code: "PERMISSION_CHECK_ERROR",
       });
     }
@@ -216,6 +244,7 @@ const checkAnyPermission = (permissions) => {
         return res.status(403).json({
           success: false,
           message: "用户未分配角色",
+          code: "NO_ROLE_ASSIGNED",
           error_code: "NO_ROLE_ASSIGNED",
         });
       }
@@ -228,6 +257,7 @@ const checkAnyPermission = (permissions) => {
         return res.status(403).json({
           success: false,
           message: "用户角色不存在",
+          code: "ROLE_NOT_FOUND",
           error_code: "ROLE_NOT_FOUND",
         });
       }
@@ -250,6 +280,7 @@ const checkAnyPermission = (permissions) => {
         return res.status(403).json({
           success: false,
           message: `权限不足：需要以下权限之一 ${permissions.join(", ")}`,
+          code: "ANY_PERMISSION_DENIED",
           error_code: "ANY_PERMISSION_DENIED",
           required_permissions: permissions,
         });
@@ -263,6 +294,7 @@ const checkAnyPermission = (permissions) => {
       return res.status(500).json({
         success: false,
         message: "权限检查失败",
+        code: "PERMISSION_CHECK_ERROR",
         error_code: "PERMISSION_CHECK_ERROR",
       });
     }

@@ -674,9 +674,18 @@ router.post(
       await packageToScan.update(
         {
           pallet_id: palletId,
+          last_scanned_at: new Date(),
         },
         { transaction }
       );
+
+      // 若包裹属于某入库单，联动更新 inbond.last_package_scan_at
+      if (packageToScan.inbond_id) {
+        db.Inbond.update(
+          { last_package_scan_at: new Date() },
+          { where: { id: packageToScan.inbond_id } }
+        ).catch(() => {});
+      }
 
       // 更新板的包裹数量和重量
       const palletPackages = await Package.findAll({
@@ -788,9 +797,17 @@ router.post(
       await packageToRemove.update(
         {
           pallet_id: null,
+          last_scanned_at: new Date(),
         },
         { transaction }
       );
+
+      if (packageToRemove.inbond_id) {
+        db.Inbond.update(
+          { last_package_scan_at: new Date() },
+          { where: { id: packageToRemove.inbond_id } }
+        ).catch(() => {});
+      }
 
       // 更新板的包裹数量和重量
       const palletPackages = await Package.findAll({
@@ -903,6 +920,7 @@ router.post(
       await packageToRemove.update(
         {
           pallet_id: null,
+          last_scanned_at: new Date(),
         },
         { transaction }
       );

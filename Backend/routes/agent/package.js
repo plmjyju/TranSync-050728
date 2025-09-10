@@ -9,16 +9,13 @@ import {
   INBOND_AUDIT_FIELDS,
 } from "../../utils/auditHelper.js";
 import { getRedis } from "../../utils/redisClient.js";
+import { buildError, ERROR_CODES } from "../../utils/errors.js";
+import { applyScopeToWhere } from "../../utils/scope.js";
+import { logRead } from "../../utils/logRead.js";
 
 const router = express.Router();
 
 // ==== 辅助函数与常量 === =
-const buildError = (code, message, extra = {}) => ({
-  success: false,
-  code,
-  message,
-  ...extra,
-});
 const UPPER = (v) => (typeof v === "string" ? v.trim().toUpperCase() : v);
 
 // 允许从哪些前置状态进入代理端入库确认
@@ -26,9 +23,13 @@ const ALLOWED_PRE_RECEIVE_STATUS = new Set(["prepared", "arrived"]);
 // 入库后目标状态
 const RECEIVED_STATUS = "agent_received"; // 与模型扩展状态匹配
 
-async function loadPackageByCode(package_code, transaction) {
+async function loadPackageByCode(package_code, user, transaction) {
   return db.Package.findOne({
-    where: { package_code: UPPER(package_code) },
+    where: applyScopeToWhere(
+      { package_code: UPPER(package_code) },
+      db.Package,
+      user
+    ),
     include: [
       {
         model: db.Inbond,
@@ -57,6 +58,212 @@ function checkAgentOwnership(agentId, pkg) {
   return clientSalesRepId === agentId;
 }
 
+// ==== 包裹列表（Agent仅可见自己的客户）====
+router.get(
+  "/packages",
+  authenticate,
+  checkPermission("agent.package.view"),
+  async (req, res) => {
+    const startAt = Date.now();
+    try {
+      const agentId = req.user.id;
+      const { Op } = db.Sequelize;
+      const {
+        page = 1,
+        limit = 20,
+        status,
+        inbond_id,
+        package_code,
+        q, // 模糊查询 package_code
+        date_from,
+        date_to,
+        date_field = "created_at", // 可选: created_at | updated_at | storage_time
+        order_by = "created_at",
+        order_dir = "DESC",
+      } = req.query || {};
+
+      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+      const pageSize = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 200);
+      const offset = (pageNum - 1) * pageSize;
+
+      // 校验 date 字段
+      const allowedDateFields = new Set([
+        "created_at",
+        "updated_at",
+        "storage_time",
+      ]);
+      const usedDateField = allowedDateFields.has(date_field)
+        ? date_field
+        : "created_at";
+
+      // 所属客户（代理人）过滤：来自包裹的 client 或 inbond 的 client 的 salesRepId 必须是当前代理
+      const ownershipFilter = {
+        [Op.or]: [
+          { "$client.salesRepId$": agentId },
+          { "$inbond.client.salesRepId$": agentId },
+        ],
+      };
+
+      // 基础筛选
+      const baseFilter = {};
+      if (status) baseFilter.status = status;
+      if (package_code) baseFilter.package_code = UPPER(package_code);
+
+      // inbond_id 数字校验
+      if (inbond_id !== undefined) {
+        const ibId = Number(inbond_id);
+        if (!Number.isFinite(ibId) || ibId <= 0) {
+          return res
+            .status(400)
+            .json(
+              buildError(
+                ERROR_CODES?.PKG_PARAM_INVALID || "PKG_PARAM_INVALID",
+                "inbond_id 无效"
+              )
+            );
+        }
+        baseFilter.inbond_id = ibId;
+      }
+
+      // 模糊查询（与精确 package_code 互斥）
+      if (!baseFilter.package_code && q) {
+        baseFilter.package_code = { [Op.like]: `%${UPPER(q)}%` };
+      }
+
+      // 日期范围
+      if (date_from || date_to) {
+        const df = {};
+        if (date_from) {
+          const d = new Date(date_from);
+          if (isNaN(d.getTime())) {
+            return res
+              .status(400)
+              .json(
+                buildError(
+                  ERROR_CODES?.PKG_PARAM_INVALID || "PKG_PARAM_INVALID",
+                  "date_from 无效 (ISO 日期)"
+                )
+              );
+          }
+          df[Op.gte] = d;
+        }
+        if (date_to) {
+          const d = new Date(date_to);
+          if (isNaN(d.getTime())) {
+            return res
+              .status(400)
+              .json(
+                buildError(
+                  ERROR_CODES?.PKG_PARAM_INVALID || "PKG_PARAM_INVALID",
+                  "date_to 无效 (ISO 日期)"
+                )
+              );
+          }
+          df[Op.lte] = d;
+        }
+        baseFilter[usedDateField] = df;
+      }
+
+      // 合并作用域 + 归属过滤
+      const where = applyScopeToWhere(
+        { ...baseFilter, ...ownershipFilter },
+        db.Package,
+        req.user
+      );
+
+      const include = [
+        {
+          model: db.User,
+          as: "client",
+          attributes: ["id", "companyName", "salesRepId"],
+          required: false,
+        },
+        {
+          model: db.Inbond,
+          as: "inbond",
+          attributes: ["id", "inbond_code", "status"],
+          required: false,
+          include: [
+            {
+              model: db.User,
+              as: "client",
+              attributes: ["id", "companyName", "salesRepId"],
+              required: false,
+            },
+          ],
+        },
+      ];
+
+      const order = [
+        [order_by, String(order_dir).toUpperCase() === "ASC" ? "ASC" : "DESC"],
+      ];
+
+      const { count, rows } = await db.Package.findAndCountAll({
+        where,
+        include,
+        attributes: [
+          "id",
+          "package_code",
+          "status",
+          "weight_kg",
+          "length_cm",
+          "width_cm",
+          "height_cm",
+          "storage_time",
+          "warehouse_location",
+          "inbond_id",
+          "client_id",
+          "created_at",
+          "updated_at",
+        ],
+        order,
+        limit: pageSize,
+        offset,
+        distinct: true, // 避免 include 导致 count 放大
+      });
+
+      res.json({
+        success: true,
+        message: "获取包裹列表成功",
+        packages: rows,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: pageSize,
+          totalPages: Math.ceil(count / pageSize) || 0,
+        },
+        filters: {
+          status: status || null,
+          inbond_id: inbond_id ? Number(inbond_id) : null,
+          package_code: package_code ? UPPER(package_code) : null,
+          q: q || null,
+          date_from: date_from || null,
+          date_to: date_to || null,
+          date_field: usedDateField,
+        },
+      });
+
+      logRead(req, {
+        entityType: "Package",
+        page: pageNum,
+        pageSize,
+        resultCount: rows.length,
+        startAt,
+      });
+    } catch (err) {
+      console.error("agent list packages error", err);
+      return res
+        .status(500)
+        .json(
+          buildError(
+            ERROR_CODES?.PKG_LIST_ERROR || "PKG_LIST_ERROR",
+            "获取包裹列表失败"
+          )
+        );
+    }
+  }
+);
+
 // ==== 单包裹扫码入库（替代原 confirm-arrival）====
 router.post(
   "/scan/receive",
@@ -72,7 +279,9 @@ router.post(
         await t.rollback();
         return res
           .status(400)
-          .json(buildError("PKG_CODE_MISSING", "package_code 不能为空"));
+          .json(
+            buildError(ERROR_CODES.PKG_CODE_MISSING, "package_code 不能为空")
+          );
       }
       const lockKey = `pkg:scan:lock:${package_code}`;
       if (r) {
@@ -81,22 +290,26 @@ router.post(
           await t.rollback();
           return res
             .status(429)
-            .json(buildError("PKG_SCAN_BUSY", "包裹正在处理中"));
+            .json(buildError(ERROR_CODES.PKG_SCAN_BUSY, "包裹正在处理中"));
         }
       }
 
-      const pkg = await loadPackageByCode(package_code, t);
+      const pkg = await loadPackageByCode(package_code, req.user, t);
       if (!pkg) {
         await t.rollback();
-        return res
-          .status(404)
-          .json(buildError("PKG_NOT_FOUND", "包裹不存在", { package_code }));
+        return res.status(404).json(
+          buildError(ERROR_CODES.PKG_NOT_FOUND, "包裹不存在", {
+            package_code,
+          })
+        );
       }
       if (!checkAgentOwnership(agentId, pkg)) {
         await t.rollback();
         return res
           .status(403)
-          .json(buildError("PKG_AGENT_FORBIDDEN", "无权限操作该客户包裹"));
+          .json(
+            buildError(ERROR_CODES.PKG_AGENT_FORBIDDEN, "无权限操作该客户包裹")
+          );
       }
 
       const pkgBefore = pickSnapshot(pkg, PACKAGE_AUDIT_FIELDS);
@@ -135,7 +348,7 @@ router.post(
           .status(400)
           .json(
             buildError(
-              "PKG_STATUS_INVALID",
+              ERROR_CODES.PKG_STATUS_INVALID,
               `当前状态(${pkg.status})不可入库，需在: ${[
                 ...ALLOWED_PRE_RECEIVE_STATUS,
               ].join("/")}`
@@ -149,6 +362,7 @@ router.post(
       pkg.arrival_confirmed_by = pkg.arrival_confirmed_by || agentId;
       pkg.storage_time = new Date();
       pkg.storage_operator = String(agentId);
+      pkg.last_scanned_at = new Date();
       if (warehouse_location) pkg.warehouse_location = warehouse_location;
       if (note) {
         pkg.remark = pkg.remark
@@ -176,7 +390,11 @@ router.post(
       let inbondIdForAudit = null;
       if (pkg.inbond_id) {
         const counts = await db.Package.findAll({
-          where: { inbond_id: pkg.inbond_id },
+          where: applyScopeToWhere(
+            { inbond_id: pkg.inbond_id },
+            db.Package,
+            req.user
+          ),
           attributes: ["status"],
           transaction: t,
         });
@@ -215,6 +433,13 @@ router.post(
       const pkgAfter = pickSnapshot(pkg, PACKAGE_AUDIT_FIELDS);
 
       await t.commit();
+      // 联动更新 inbond.last_package_scan_at
+      if (pkg.inbond_id) {
+        db.Inbond.update(
+          { last_package_scan_at: new Date() },
+          { where: { id: pkg.inbond_id } }
+        ).catch(() => {});
+      }
       writeAudit({
         module: "agent",
         entityType: "Package",
@@ -244,7 +469,7 @@ router.post(
 
       return res.json({
         success: true,
-        message: inbondCompleted ? "包裹入库并完成 Inbond" : "包裹入库成功",
+        message: "包裹入库成功",
         package: {
           id: pkg.id,
           package_code: pkg.package_code,
@@ -259,7 +484,7 @@ router.post(
       console.error("scan receive error", e);
       return res
         .status(500)
-        .json(buildError("PKG_RECEIVE_ERROR", "包裹入库失败"));
+        .json(buildError(ERROR_CODES.PKG_RECEIVE_ERROR, "包裹入库失败"));
     }
   }
 );
@@ -279,13 +504,20 @@ router.post(
         await t.rollback();
         return res
           .status(400)
-          .json(buildError("PKG_CODE_LIST_EMPTY", "package_codes 不能为空"));
+          .json(
+            buildError(
+              ERROR_CODES.PKG_CODE_LIST_EMPTY,
+              "package_codes 不能为空"
+            )
+          );
       }
       if (package_codes.length > 300) {
         await t.rollback();
         return res
           .status(400)
-          .json(buildError("PKG_CODE_LIST_TOO_LARGE", "一次最多300个"));
+          .json(
+            buildError(ERROR_CODES.PKG_CODE_LIST_TOO_LARGE, "一次最多300个")
+          );
       }
 
       const successes = [];
@@ -297,21 +529,23 @@ router.post(
       for (let i = 0; i < package_codes.length; i++) {
         const code = package_codes[i];
         try {
-          if (!code) throw buildError("PKG_CODE_EMPTY", "空的package_code");
+          if (!code)
+            throw buildError(ERROR_CODES.PKG_CODE_MISSING, "空的package_code");
           if (r) {
             const lock = await r.set(`pkg:scan:lock:${code}`, agentId, {
               NX: true,
               EX: 5,
             });
-            if (!lock) throw buildError("PKG_SCAN_BUSY", "包裹处理中");
+            if (!lock)
+              throw buildError(ERROR_CODES.PKG_SCAN_BUSY, "包裹处理中");
           }
-          const pkg = await loadPackageByCode(code, t);
+          const pkg = await loadPackageByCode(code, req.user, t);
           if (!pkg)
-            throw buildError("PKG_NOT_FOUND", "包裹不存在", {
+            throw buildError(ERROR_CODES.PKG_NOT_FOUND, "包裹不存在", {
               package_code: code,
             });
           if (!checkAgentOwnership(agentId, pkg))
-            throw buildError("PKG_AGENT_FORBIDDEN", "无权限");
+            throw buildError(ERROR_CODES.PKG_AGENT_FORBIDDEN, "无权限");
 
           const beforeSnap = pickSnapshot(pkg, PACKAGE_AUDIT_FIELDS);
           if (pkg.status === RECEIVED_STATUS) {
@@ -332,7 +566,7 @@ router.post(
           }
           if (!ALLOWED_PRE_RECEIVE_STATUS.has(pkg.status)) {
             throw buildError(
-              "PKG_STATUS_INVALID",
+              ERROR_CODES.PKG_STATUS_INVALID,
               `状态(${pkg.status})不可入库`
             );
           }
@@ -342,6 +576,7 @@ router.post(
           pkg.arrival_confirmed_by = pkg.arrival_confirmed_by || agentId;
           pkg.storage_time = new Date();
           pkg.storage_operator = String(agentId);
+          pkg.last_scanned_at = new Date();
           if (warehouse_location) pkg.warehouse_location = warehouse_location;
           if (note)
             pkg.remark = pkg.remark
@@ -386,7 +621,11 @@ router.post(
       const completedInbonds = [];
       for (const inbondId of touchedInbonds) {
         const statuses = await db.Package.findAll({
-          where: { inbond_id: inbondId },
+          where: applyScopeToWhere(
+            { inbond_id: inbondId },
+            db.Package,
+            req.user
+          ),
           attributes: ["status"],
           transaction: t,
         });
@@ -429,7 +668,7 @@ router.post(
         await t.rollback();
         return res.status(400).json({
           success: false,
-          code: "PKG_BATCH_ALL_FAILED",
+          code: ERROR_CODES.PKG_BATCH_ALL_FAILED,
           message: "全部入库失败",
           errors,
         });
@@ -449,6 +688,19 @@ router.post(
           ip: req.ip,
           ua: req.headers["user-agent"],
         });
+        // 联动更新 inbond.last_package_scan_at (批量)
+        try {
+          const pkgId = r.id;
+          const p = await db.Package.findByPk(pkgId, {
+            attributes: ["inbond_id"],
+          });
+          if (p?.inbond_id) {
+            db.Inbond.update(
+              { last_package_scan_at: new Date() },
+              { where: { id: p.inbond_id } }
+            ).catch(() => {});
+          }
+        } catch (e) {}
       }
       for (const ib of inbondAuditRecords) {
         writeAudit({
@@ -489,7 +741,7 @@ router.post(
       console.error("batch scan receive error", e);
       return res
         .status(500)
-        .json(buildError("PKG_BATCH_RECEIVE_ERROR", "批量入库失败"));
+        .json(buildError(ERROR_CODES.PKG_BATCH_RECEIVE_ERROR, "批量入库失败"));
     }
   }
 );

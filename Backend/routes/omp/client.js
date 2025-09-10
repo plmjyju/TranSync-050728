@@ -1,6 +1,6 @@
 import express from "express";
 import db from "../../models/index.js";
-import { authenticate } from "../../middleware/auth.js";
+import { authenticate } from "../../middlewares/authenticate.js";
 import { recordSystemActivity } from "../../utils/recordSystemActivity.js";
 
 const router = express.Router();

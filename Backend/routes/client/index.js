@@ -3,6 +3,7 @@ import forecastsRouter from "./forecasts.js";
 import inbondRouter from "./inbond.js";
 import packageRouter from "./package.js";
 import opReqRouter from "./operation-requirements.js";
+import itemTemplateRouter from "./item-templates.js";
 import db from "../../models/index.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -23,6 +24,7 @@ const CLIENT_PERMISSIONS = Object.freeze([
   "client.package.delete",
   "client.package.item.add",
   "client.package.item.view",
+  "client.package.item.update", // 新增：允许编辑包裹明细
   "client.packages.edit", // 兼容旧权限（后续可移除）
   "client.package.track",
   "client.statistics.view",
@@ -152,5 +154,6 @@ router.use("/forecasts", forecastsRouter);
 router.use("/", inbondRouter);
 router.use("/", packageRouter);
 router.use("/", opReqRouter);
+router.use("/", itemTemplateRouter);
 
 export default router;

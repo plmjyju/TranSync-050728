@@ -11,12 +11,12 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.STRING(20),
         allowNull: false,
         unique: true,
-        comment: "操作需求代码（如：FRAGILE, UPRIGHT, COLD_CHAIN等）",
+        comment: "操作需求代码（如：PU, S-USPS, F-USPS, F-FDX）",
       },
       requirement_name: {
         type: DataTypes.STRING(100),
         allowNull: false,
-        comment: "操作需求名称",
+        comment: "操作需求名称（如：自取、拆箱USPS、整箱USPS、整箱FedEx）",
       },
       requirement_name_en: {
         type: DataTypes.STRING(100),
@@ -26,104 +26,42 @@ export default (sequelize, DataTypes) => {
       description: {
         type: DataTypes.TEXT,
         allowNull: true,
-        comment: "详细描述和操作说明",
-      },
-      category: {
-        type: DataTypes.ENUM(
-          "handling", // 搬运要求
-          "storage", // 存储要求
-          "transport", // 运输要求
-          "temperature", // 温度要求
-          "security", // 安全要求
-          "special", // 特殊要求
-          "other" // 其他
-        ),
-        defaultValue: "handling",
-        comment: "需求分类",
-      },
-      priority_level: {
-        type: DataTypes.ENUM("low", "medium", "high", "critical"),
-        defaultValue: "medium",
-        comment: "优先级别",
-      },
-      icon_class: {
-        type: DataTypes.STRING(50),
-        allowNull: true,
-        comment: "图标CSS类名",
-      },
-      color_code: {
-        type: DataTypes.STRING(10),
-        allowNull: true,
-        comment: "颜色代码（用于标识）",
+        comment: "说明/备注",
       },
       is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true,
         comment: "是否启用",
       },
-      // 新增: 客户端可见 / 可选择 标记
-      is_client_visible: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: "客户端是否可见 (Client Portal 列表展示)",
+      // 简化：仅保留处理模式 + 承运渠道 + 标签缩写
+      handling_mode: {
+        type: DataTypes.ENUM("pickup", "split", "full"),
+        allowNull: false,
+        comment: "处理模式：pickup(自取) / split(拆箱) / full(整箱)",
       },
-      is_client_selectable: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-        comment: "客户端是否允许选择 (提交/绑定包裹时可选)",
-      },
-      client_notes: {
-        type: DataTypes.TEXT,
+      carrier: {
+        type: DataTypes.ENUM(
+          "USPS",
+          "FEDEX",
+          "UPS",
+          "DHL",
+          "LOCAL",
+          "SELF",
+          "OTHER"
+        ),
         allowNull: true,
-        comment: "给客户端展示的补充说明",
+        comment: "承运渠道：USPS/FEDEX/UPS/DHL/LOCAL(本地)/SELF(自取)/OTHER",
+      },
+      label_abbr: {
+        type: DataTypes.STRING(10),
+        allowNull: false,
+        unique: true,
+        comment: "板唛号用缩写（如：PU, S-USPS, F-USPS, F-FDX）",
       },
       sort_order: {
         type: DataTypes.INTEGER,
         defaultValue: 0,
-        comment: "排序顺序",
-      },
-      // 新增: 拆板 / 分发模式（用于客户指示不同包裹走不同渠道）
-      distribution_mode: {
-        type: DataTypes.ENUM("split", "full", "pickup", "delivery", "other"),
-        allowNull: true,
-        comment:
-          "分发模式: split(拆箱), full(整箱), pickup(卡派/自取), delivery(卡派/配送), other(其他)",
-      },
-      // 新增: 渠道 / 承运商
-      carrier_channel: {
-        type: DataTypes.ENUM(
-          "USPS",
-          "UPS",
-          "FEDEX",
-          "DHL",
-          "LOCAL", // 本地配送 / 卡派
-          "SELF", // 自取
-          "OTHER"
-        ),
-        allowNull: true,
-        comment: "承运渠道: USPS / UPS / FEDEX / DHL / LOCAL / SELF / OTHER",
-      },
-      // 新增: 配送目的地（仅 delivery 使用，内嵌字段）
-      delivery_destination_type: {
-        type: DataTypes.ENUM("region", "city", "zone", "hub", "other"),
-        allowNull: true,
-        comment:
-          "配送目的地类型: region / city / zone / hub / other，仅在 delivery 模式下使用",
-      },
-      delivery_destination_code: {
-        type: DataTypes.STRING(50),
-        allowNull: true,
-        comment: "配送目的地代码（如 CITY_LA, RGN_SZX）",
-      },
-      delivery_destination_name: {
-        type: DataTypes.STRING(100),
-        allowNull: true,
-        comment: "配送目的地名称（展示）",
-      },
-      delivery_route_note: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        comment: "配送路线备注 / 说明",
+        comment: "排序",
       },
       created_by: {
         type: DataTypes.BIGINT,
@@ -144,41 +82,14 @@ export default (sequelize, DataTypes) => {
       createdAt: "created_at",
       updatedAt: "updated_at",
       indexes: [
-        {
-          fields: ["requirement_code"],
-          unique: true,
-        },
-        {
-          fields: ["category"],
-        },
-        {
-          fields: ["is_active"],
-        },
-        {
-          fields: ["sort_order"],
-        },
-        // 新增索引: 按模式快速筛选
-        {
-          fields: ["distribution_mode"],
-        },
-        {
-          fields: ["carrier_channel"],
-        },
-        {
-          fields: ["delivery_destination_type", "delivery_destination_code"],
-        },
-        // 为 delivery 唯一组合（MySQL 不支持部分索引，这里直接整体唯一，非 delivery 行两列都为空可重复）
-        {
-          unique: false,
-          fields: [
-            "distribution_mode",
-            "delivery_destination_type",
-            "delivery_destination_code",
-          ],
-        },
-        { fields: ["is_client_visible"] },
-        { fields: ["is_client_selectable"] },
+        { name: "uq_opreq_code", fields: ["requirement_code"], unique: true },
+        { name: "uq_opreq_abbr", fields: ["label_abbr"], unique: true },
+        { name: "idx_opreq_mode", fields: ["handling_mode"] },
+        { name: "idx_opreq_carrier", fields: ["carrier"] },
+        { name: "idx_opreq_active", fields: ["is_active"] },
+        { name: "idx_opreq_sort", fields: ["sort_order"] },
       ],
+      // 注意：如果数据库仍包含旧字段（distribution_mode、carrier_channel、is_client_visible 等），需要迁移脚本清理/映射
     }
   );
 
@@ -192,13 +103,9 @@ export default (sequelize, DataTypes) => {
       as: "updater",
     });
 
-    // 关联Package（多对多关系）
-    OperationRequirement.belongsToMany(models.Package, {
-      through: models.PackageOperationRequirement,
-      foreignKey: "operation_requirement_id",
-      otherKey: "package_id",
-      as: "packages",
-    });
+    // DEPRECATED: 原多对多 packages 关联已下线，改为 Package.operation_requirement_id 单一外键
+    // OperationRequirement.belongsToMany(models.Package, { ... }) removed.
+
     OperationRequirement.hasMany(models.UserOperationRequirement, {
       foreignKey: "operation_requirement_id",
       as: "userBindings",
@@ -211,34 +118,43 @@ export default (sequelize, DataTypes) => {
     });
   };
 
-  // 钩子：可加入简单校验（不强制，业务层也应校验）
+  // 简化校验/归一化
   OperationRequirement.addHook("beforeValidate", (req) => {
-    if (req.distribution_mode === "delivery") {
-      if (!req.delivery_destination_name) {
-        throw new Error("delivery 模式需要 delivery_destination_name");
+    // 统一缩写为大写、裁剪
+    if (req.label_abbr) {
+      req.label_abbr = String(req.label_abbr).trim().toUpperCase().slice(0, 10);
+    }
+
+    if (req.handling_mode === "pickup") {
+      // 自取模式：carrier 统一为 SELF，默认缩写 PU
+      req.carrier = "SELF";
+      if (!req.label_abbr) req.label_abbr = "PU";
+    } else if (req.handling_mode === "split" || req.handling_mode === "full") {
+      // 拆箱/整箱需要指定实际承运渠道（不可为 SELF）
+      if (!req.carrier || req.carrier === "SELF") {
+        throw new Error(
+          "split/full 模式需要有效的 carrier (USPS/FEDEX/UPS/DHL/LOCAL/OTHER)"
+        );
       }
-    } else {
-      // 非 delivery 清空目的地字段，避免脏数据
-      req.delivery_destination_type = null;
-      req.delivery_destination_code = null;
-      req.delivery_destination_name = null;
-      req.delivery_route_note = null;
-    }
-    if (["split", "full"].includes(req.distribution_mode)) {
-      if (!req.carrier_channel) {
-        throw new Error(`${req.distribution_mode} 模式需要 carrier_channel`);
+      if (!req.label_abbr) {
+        const map = {
+          USPS: "USPS",
+          FEDEX: "FDX",
+          UPS: "UPS",
+          DHL: "DHL",
+          LOCAL: "LC",
+          OTHER: "OTH",
+        };
+        const c = map[req.carrier] || "OTH";
+        req.label_abbr = `${req.handling_mode === "split" ? "S" : "F"}-${c}`;
       }
     }
-    if (req.distribution_mode === "pickup") {
-      if (req.carrier_channel && req.carrier_channel !== "SELF") {
-        throw new Error("pickup 模式 carrier_channel 只能为 SELF 或留空");
-      }
-      req.carrier_channel = "SELF"; // 统一规范
-    }
-    // 额外：如果不可见则不可选择
-    if (req.is_client_selectable && !req.is_client_visible) {
-      req.is_client_visible = true; // 自动矫正，或抛错： throw new Error("不可见的需求不能设为可选择");
-    }
+
+    // 最终再次保证上限与大写
+    req.label_abbr = String(req.label_abbr || "")
+      .trim()
+      .toUpperCase()
+      .slice(0, 10);
   });
 
   return OperationRequirement;
