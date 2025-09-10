@@ -31,20 +31,21 @@
             </el-select>
             <el-button type="primary" @click="load">查询</el-button>
           </div>
-          <div class="ops-bar">
-            <el-button
-              type="primary"
-              v-permission="['client.inbond.create']"
-              @click="goCreateInbond"
-              >新建入库单</el-button
-            >
-          </div>
+
           <el-card
             class="section-card"
             shadow="never"
             :key="'all'"
             :style="autoHeight ? { minHeight: sectionMinH + 'px' } : null"
           >
+            <div class="ops-bar">
+              <el-button
+                type="primary"
+                v-permission="['client.inbond.create']"
+                @click="goCreateInbond"
+                >新建入库单</el-button
+              >
+            </div>
             <div
               class="table-wrap"
               :style="autoHeight ? { minHeight: tableMinH + 'px' } : null"
@@ -106,17 +107,17 @@
                   </template>
                 </el-table-column>
               </el-table>
-            </div>
-            <div class="pager">
-              <el-pagination
-                v-model:current-page="page"
-                v-model:page-size="limit"
-                :total="total"
-                :page-sizes="[10, 20, 50]"
-                layout="total, sizes, prev, pager, next, jumper"
-                @size-change="load"
-                @current-change="load"
-              />
+              <div class="pager">
+                <el-pagination
+                  v-model:current-page="page"
+                  v-model:page-size="limit"
+                  :total="total"
+                  :page-sizes="[10, 20, 50]"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  @size-change="load"
+                  @current-change="load"
+                />
+              </div>
             </div>
           </el-card>
         </el-tab-pane>
@@ -399,17 +400,17 @@
                   </template>
                 </el-table-column>
               </el-table>
-            </div>
-            <div class="pager">
-              <el-pagination
-                v-model:current-page="page"
-                v-model:page-size="limit"
-                :total="total"
-                :page-sizes="[10, 20, 50]"
-                layout="total, sizes, prev, pager, next, jumper"
-                @size-change="load"
-                @current-change="load"
-              />
+              <div class="pager">
+                <el-pagination
+                  v-model:current-page="page"
+                  v-model:page-size="limit"
+                  :total="total"
+                  :page-sizes="[10, 20, 50]"
+                  layout="total, sizes, prev, pager, next, jumper"
+                  @size-change="load"
+                  @current-change="load"
+                />
+              </div>
             </div>
           </el-card>
         </el-tab-pane>
@@ -1945,62 +1946,6 @@ export default {
     handleResize() {
       this.computeAutoHeights();
     },
-
-    computeAutoHeights() {
-      try {
-        this.$nextTick(() => {
-          const root = this.$el;
-          if (!root) return;
-          const page = root.querySelector(".page-wrap") || root;
-          const activePane =
-            root.querySelector(".el-tab-pane.is-active") ||
-            root.querySelector(".el-tab-pane");
-          if (!activePane) return;
-          const sc = activePane.querySelector(".section-card");
-          if (!sc) return;
-
-          const rect = sc.getBoundingClientRect();
-          const vh =
-            window.innerHeight || document.documentElement.clientHeight || 800;
-
-          // 动态读取 page 底部内边距
-          const pageCS = window.getComputedStyle(page);
-          const pagePB = parseInt(pageCS.paddingBottom, 10) || 0;
-
-          const available = Math.max(0, vh - rect.top - pagePB);
-
-          // 计算 table-wrap 可用高度（扣除卡片内边距与分页器高度+间距）
-          const cs = window.getComputedStyle(sc);
-          const pTop = parseInt(cs.paddingTop, 10) || 0;
-          const pBottom = parseInt(cs.paddingBottom, 10) || 0;
-          const pager = sc.querySelector(".pager");
-          let pagerH = 0;
-          if (pager) {
-            const pr = pager.getBoundingClientRect();
-            const pcs = window.getComputedStyle(pager);
-            const mt = parseInt(pcs.marginTop, 10) || 0;
-            const mb = parseInt(pcs.marginBottom, 10) || 0;
-            pagerH = Math.ceil(pr.height + mt + mb);
-          }
-
-          const MIN = 360;
-          const CAP = 920; // 与表格高度上限一致
-
-          const sectionH = Math.max(MIN, Math.floor(available));
-          const tableHRaw = sectionH - pTop - pBottom - pagerH;
-          const tableH = Math.max(MIN, Math.min(CAP, Math.floor(tableHRaw)));
-
-          this.sectionMinH = sectionH;
-          this.tableMinH = tableH;
-          this.sectionPadTop = pTop;
-          this.sectionPadBottom = pBottom;
-          this.pagerBlockH = pagerH;
-        });
-      } catch (e) {
-        // 忽略计算错误
-      }
-    },
-    // ...existing methods...
   },
 };
 </script>
@@ -2016,8 +1961,9 @@ export default {
 
 .full-card {
   background-color: #fff;
-  border-radius: 8px;
+
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --el-card-padding: 0px;
   /* 改为最小高度，避免固定高度造成内部滚动/压缩 */
 }
 
@@ -2032,30 +1978,42 @@ export default {
 .toolbar {
   display: flex;
   align-items: center;
-  margin-bottom: 16px;
+
+  padding: 16px;
 }
 
 .ops-bar {
   margin-bottom: 16px;
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* 改为最小高度保证“即使没数据也沾满屏幕” */
 .section-card {
   background-color: #f8f9fa;
-  border-radius: 8px;
+
   margin-bottom: 16px;
-  min-height: 380px !important;
+  --el-card-padding: 0px;
+  --el-card-border-radius: 0px;
+  padding-top: 16px;
 }
 
 .table-wrap {
   background-color: #fff;
   border-radius: 8px;
   overflow: hidden;
+  margin-left: 16px;
+  margin-right: 16px;
+  border-radius: 8 8 0 0;
+  border: 1px solid #f1f1f1;
 }
 
 .pager {
-  text-align: right;
-  margin-top: 16px;
+  text-align: left;
+  margin-top: 8px;
+  padding-left: 16px;
+  padding-right: 16px;
+  margin-bottom: 8px;
 }
 
 .editor-wrap {
@@ -2109,5 +2067,30 @@ export default {
 }
 .locked-name {
   color: #606266;
+}
+
+/* 统一设置 Tabs 标签样式：字号16px，左右内边距16px，总高度48px，文字垂直居中 */
+.status-tabs :deep(.el-tabs__item) {
+  font-size: 16px;
+  padding: 0 16px;
+  height: 48px;
+  line-height: 48px;
+  font-weight: 0;
+}
+
+/* 保证导航区域整体高度为48px，避免出现额外空白 */
+.status-tabs :deep(.el-tabs__nav-wrap) {
+  height: 48px;
+}
+
+/* 压缩 header 与内容间距，防止高度叠加造成视觉偏高 */
+.status-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+/* 强化选择器并使用 !important 覆盖 EP 默认 0 20px 的内边距 */
+.status-tabs :deep(.el-tabs__header .el-tabs__nav .el-tabs__item) {
+  padding-left: 16px !important;
+  padding-right: 16px !important;
 }
 </style>
