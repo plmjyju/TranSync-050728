@@ -106,7 +106,6 @@ export default {
 
 <style scoped>
 .page-wrap {
-  height: 100%;
   padding: 12px;
   background: #f8f8f8;
 }

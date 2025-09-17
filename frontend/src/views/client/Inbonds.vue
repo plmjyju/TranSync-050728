@@ -35,26 +35,26 @@
         <el-table-column prop="created_at" label="创建时间" width="200" />
       </el-table>
 
-      <div class="pager">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="limit"
-          :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="load"
-          @current-change="load"
-        />
-      </div>
+      <AppPager
+        class="pager ts-pager"
+        v-model:current-page="page"
+        v-model:page-size="limit"
+        :total="total"
+        :page-sizes="[20, 50, 100, 200]"
+        layout="total, prev, pager, next, sizes, jumper"
+        @size-change="load"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script>
 import http from "../../api/http";
-
+import AppPager from "../../../frontend-client/src/components/common/AppPager.vue";
 export default {
   name: "ClientInbonds",
+  components: { AppPager },
   data() {
     return {
       page: 1,
@@ -98,6 +98,7 @@ export default {
 <style scoped>
 .page-wrap {
   padding: 16px;
+  height: calc(100% - 70px);
 }
 .toolbar {
   margin-bottom: 12px;
@@ -106,7 +107,5 @@ export default {
 }
 .pager {
   margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
 }
 </style>

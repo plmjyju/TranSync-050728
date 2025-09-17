@@ -204,26 +204,35 @@ router.get(
     const startAt = Date.now();
     try {
       const customerId = req.user.id;
-      const {
-        page = 1,
-        limit = 20,
-        status,
-        q,
-        startDate,
-        endDate,
-        dateField = "created_at", // 可以选择按 created_at 或 updated_at 筛选
-        timezone = "UTC", // 客户端时区，默认UTC
-      } = req.query;
+      // 兼容旧/新参数命名
+      const page = parseInt(req.query.page || 1);
+      const limit = parseInt(req.query.limit || 20);
+      const status = req.query.status;
+      const q = req.query.q;
+      const dateField = (
+        req.query.date_field ||
+        req.query.dateField ||
+        "created_at"
+      ).trim();
+      const startDate = req.query.start_date || req.query.startDate;
+      const endDate = req.query.end_date || req.query.endDate;
+      const timezone = req.query.timezone || "UTC";
+      const hasClearanceDocs = req.query.has_clearance_docs; // 1 / 0
+      const sortBy = req.query.sort_by; // created_at | updated_at | last_arrival_at | last_scan_at
+      const sortOrderRaw = (req.query.sort_order || "").toLowerCase();
+      const sortOrder =
+        sortOrderRaw === "desc"
+          ? "DESC"
+          : sortOrderRaw === "asc"
+          ? "ASC"
+          : null;
 
       const whereClause = { client_id: customerId };
 
-      // 验证时区格式
-      const validTimezone = moment.tz.zone(timezone) ? timezone : "UTC";
-
       // 状态筛选
-      if (status) {
-        whereClause.status = status;
-      }
+      if (status) whereClause.status = status;
+
+      // 模糊搜索
       if (q) {
         whereClause[db.Sequelize.Op.or] = [
           { inbond_code: { [db.Sequelize.Op.like]: `%${q}%` } },
@@ -231,19 +240,25 @@ router.get(
         ];
       }
 
-      // 日期范围筛选（支持时区）
+      // 清关资料筛选
+      if (hasClearanceDocs === "1") {
+        whereClause.clearance_summary_json = { [db.Sequelize.Op.ne]: null };
+      } else if (hasClearanceDocs === "0") {
+        whereClause.clearance_summary_json = null;
+      }
+
+      // 验证时区
+      const validTimezone = moment.tz.zone(timezone) ? timezone : "UTC";
+
+      // 日期范围筛选（按新参数）
       if (startDate || endDate) {
         const dateFilter = {};
-
         if (startDate) {
-          // 解析开始日期，考虑客户端时区
           if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-            return res.status(400).json({
-              error: "Invalid startDate format. Use YYYY-MM-DD",
-            });
+            return res
+              .status(400)
+              .json({ error: "Invalid start_date format. Use YYYY-MM-DD" });
           }
-
-          // 在客户端时区创建当天开始时间，然后转换为UTC
           const startMoment = moment.tz(
             startDate + " 00:00:00",
             "YYYY-MM-DD HH:mm:ss",
@@ -251,16 +266,12 @@ router.get(
           );
           dateFilter[db.Sequelize.Op.gte] = startMoment.utc().toDate();
         }
-
         if (endDate) {
-          // 解析结束日期，考虑客户端时区
           if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-            return res.status(400).json({
-              error: "Invalid endDate format. Use YYYY-MM-DD",
-            });
+            return res
+              .status(400)
+              .json({ error: "Invalid end_date format. Use YYYY-MM-DD" });
           }
-
-          // 在客户端时区创建当天结束时间，然后转换为UTC
           const endMoment = moment.tz(
             endDate + " 23:59:59",
             "YYYY-MM-DD HH:mm:ss",
@@ -268,38 +279,79 @@ router.get(
           );
           dateFilter[db.Sequelize.Op.lte] = endMoment.utc().toDate();
         }
-
-        // 验证日期字段
+        // 允许 created_at / updated_at
         if (!["created_at", "updated_at"].includes(dateField)) {
-          return res.status(400).json({
-            error: "Invalid dateField. Must be 'created_at' or 'updated_at'",
-          });
+          return res
+            .status(400)
+            .json({
+              error: "Invalid date_field. Must be 'created_at' or 'updated_at'",
+            });
         }
-
         whereClause[dateField] = dateFilter;
       }
 
-      const offset = (page - 1) * limit;
+      // 判断是否为需要汇总字段排序（需要先计算聚合再排序）
+      const aggregateSort = ["last_arrival_at", "last_scan_at"].includes(
+        sortBy
+      );
 
-      const { count, rows } = await db.Inbond.findAndCountAll({
-        where: whereClause,
-        order: [["created_at", "DESC"]],
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        attributes: [
-          "id",
-          "inbond_code",
-          "shipping_type",
-          "arrival_method",
-          "status",
-          "clearance_type",
-          "remark",
-          "created_at",
-          "updated_at",
-        ],
-      });
+      let rows = [];
+      let count = 0;
 
-      // === 聚合当前页统计 ===
+      if (!aggregateSort) {
+        // 直接数据库分页 + 排序
+        const order = [];
+        if (
+          sortBy &&
+          ["created_at", "updated_at"].includes(sortBy) &&
+          sortOrder
+        ) {
+          order.push([sortBy, sortOrder]);
+        } else {
+          // 默认按创建时间倒序
+          order.push(["created_at", "DESC"]);
+        }
+        const result = await db.Inbond.findAndCountAll({
+          where: whereClause,
+          order,
+          limit,
+          offset: (page - 1) * limit,
+          attributes: [
+            "id",
+            "inbond_code",
+            "shipping_type",
+            "arrival_method",
+            "status",
+            "clearance_type",
+            "remark",
+            "created_at",
+            "updated_at",
+            "clearance_summary_json",
+          ],
+        });
+        rows = result.rows;
+        count = result.count;
+      } else {
+        // 聚合字段排序：先取全部（可根据需要加入安全上限/后续再优化）
+        rows = await db.Inbond.findAll({
+          where: whereClause,
+          attributes: [
+            "id",
+            "inbond_code",
+            "shipping_type",
+            "arrival_method",
+            "status",
+            "clearance_type",
+            "remark",
+            "created_at",
+            "updated_at",
+            "clearance_summary_json",
+          ],
+        });
+        count = rows.length;
+      }
+
+      // === 统计聚合 ===
       const ids = rows.map((r) => r.id);
       const { fn, col, literal, Op } = db.Sequelize;
       const statsMap = new Map();
@@ -327,7 +379,6 @@ router.get(
             raw: true,
           });
         } catch (err) {
-          // 回退：数据库尚未有 last_scanned_at 列时，移除该聚合，避免接口报错
           const msg = err?.original?.sqlMessage || err?.message || "";
           if (
             err?.name === "SequelizeDatabaseError" &&
@@ -359,7 +410,8 @@ router.get(
         }
         for (const s of stats) statsMap.set(s.inbond_id, s);
       }
-      const merged = rows.map((r) => {
+
+      let merged = rows.map((r) => {
         const s = statsMap.get(r.id) || {};
         return {
           ...r.toJSON(),
@@ -370,33 +422,50 @@ router.get(
         };
       });
 
+      // 聚合字段排序处理（全量排序后分页）
+      if (aggregateSort && sortOrder) {
+        merged.sort((a, b) => {
+          const av = a[sortBy];
+          const bv = b[sortBy];
+          const at = av ? new Date(av).getTime() : 0;
+          const bt = bv ? new Date(bv).getTime() : 0;
+          if (at === bt) return 0;
+          return sortOrder === "ASC" ? at - bt : bt - at;
+        });
+        const startIdx = (page - 1) * limit;
+        merged = merged.slice(startIdx, startIdx + limit);
+      }
+
       const response = {
         message: "Inbonds retrieved successfully",
         inbonds: merged,
         pagination: {
           total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page,
+          limit,
           totalPages: Math.ceil(count / limit),
         },
         filters: {
           status: status || null,
           startDate: startDate || null,
           endDate: endDate || null,
-          dateField: dateField,
+          dateField,
           timezone: validTimezone,
+          has_clearance_docs: hasClearanceDocs ?? null,
+          sort_by: sortBy || null,
+          sort_order: sortOrder || null,
         },
       };
       res.status(200).json(response);
       logRead(req, {
         entityType: "Inbond",
-        page: parseInt(page),
-        pageSize: parseInt(limit),
-        resultCount: rows.length,
+        page,
+        pageSize: limit,
+        resultCount: merged.length,
         startAt,
       });
     } catch (err) {
-      console.error("Error fetching inbonds:", err);
+      console.error("Error fetching inbonds (enhanced):", err);
       return res.status(500).json({ error: "Failed to fetch inbonds" });
     }
   }

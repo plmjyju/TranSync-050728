@@ -37,8 +37,15 @@ body {
   margin: 0;
   background: #f5f7fa;
 }
+.common-layout {
+  height: 100%;
+  width: 100%;
+}
 .layout-root {
-  height: 100vh;
+  height: 100%;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 .layout-inner {
   display: flex;

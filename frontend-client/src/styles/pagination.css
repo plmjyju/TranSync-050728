@@ -1,0 +1,81 @@
+.ts-pager {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 6px 16px;
+  gap: 8px;
+  background: #ffffff;
+  width: 100%; /* 关键：铺满 */
+  box-sizing: border-box;
+  border-top: 1px solid #f0f0f0; /* 分隔线 */
+}
+
+/* 对齐辅助类（AppPager align 属性使用） */
+.ts-pager.ts-pager-align-left {
+  justify-content: flex-start;
+}
+.ts-pager.ts-pager-align-center {
+  justify-content: center;
+}
+.ts-pager.ts-pager-align-right {
+  justify-content: flex-end;
+}
+
+.ts-pager :global(.el-pagination) {
+  --el-pagination-bg-color: transparent;
+}
+.ts-pager :global(.el-pagination button),
+.ts-pager :global(.el-pagination .el-pager li) {
+  height: 26px;
+  line-height: 24px;
+  min-width: 28px;
+  border-radius: 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0 6px;
+  margin: 0 2px;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+.ts-pager :global(.el-pagination button) {
+  border-color: #dcdfe6;
+  color: #606266;
+}
+.ts-pager :global(.el-pagination button:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ts-pager :global(.el-pagination .el-pager li:not(.is-active):hover) {
+  color: #409eff;
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.ts-pager :global(.el-pagination .el-pager li.is-active) {
+  background: #409eff;
+  color: #fff;
+  border-color: #409eff;
+  font-weight: 500;
+}
+.ts-pager :global(.el-pagination__sizes .el-input__inner) {
+  height: 26px;
+  line-height: 26px;
+  border-radius: 14px;
+  padding-left: 8px;
+  padding-right: 26px;
+  font-size: 12px;
+}
+.ts-pager :global(.el-pagination__jump .el-input__inner) {
+  height: 26px;
+  line-height: 26px;
+  border-radius: 14px;
+  font-size: 12px;
+  padding: 0 6px;
+}
+.ts-pager :global(.rotate-90) {
+  display: inline-block;
+  transform: rotate(90deg);
+}
+.ts-pager :global(.rotate-270) {
+  display: inline-block;
+  transform: rotate(270deg);
+}

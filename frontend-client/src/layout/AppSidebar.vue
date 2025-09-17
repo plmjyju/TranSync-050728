@@ -96,6 +96,7 @@ export default {
   flex-direction: column;
   border-right: 0; /* 取消整体右边框，避免作用到顶部区 */
   transition: width 0.2s ease; /* 折叠/展开更顺滑 */
+  height: 100%;
 }
 .aside-top {
   height: 56px; /* 与 Header 高度一致 */
