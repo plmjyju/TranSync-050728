@@ -1,0 +1,224 @@
+/* 通用分屏 / 列表页布局样式（Inbonds / Packages 共用） */
+.page-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  background-color: #f4f6f9;
+}
+.full-card {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --el-card-padding: 0px;
+}
+.status-tabs { margin-bottom: 0; }
+.status-tabs :deep(.el-tabs__item) { font-size: 16px; padding: 0 16px; height: 48px; line-height: 48px; font-weight: 0; }
+.status-tabs :deep(.el-tabs__nav-wrap){ height:44px; }
+.status-tabs :deep(.el-tabs__header){ margin-bottom:0; }
+.status-tabs :deep(.el-tabs__header .el-tabs__nav .el-tabs__item){ padding-left:16px !important; padding-right:16px !important; }
+.toolbar { display:flex; align-items:center; padding:16px; gap:8px; flex-wrap:wrap; }
+.inbond-card { margin:0 16px 12px; background:#fff; }
+.header-flex { display:flex; align-items:center; justify-content:space-between; }
+.hdr-label { color:#999; margin-right:8px; }
+.code { font-weight:600; }
+.filter-toolbar {
+  margin:0; /* 取消外边距 */
+  background:#fff;
+  padding:12px 16px 4px; /* 保留基础内边距 */
+  border:1px solid #f1f1f1;
+  border-radius:8px 8px 0 0;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+/* 与表格壳衔接：去掉表格上缘圆角避免双层 */
+.filter-toolbar + .section-card .table-shell,
+.filter-toolbar + .table-section .table-shell,
+.filter-toolbar + * .table-shell {
+  border-top-left-radius:0 !important;
+  border-top-right-radius:0 !important;
+}
+/* tabs 下方细线保持 */
+.status-tabs :deep(.el-tabs__nav-scroll){ border-bottom:1px solid #e5e7eb; }
+/* toolbar 与 tabs 之间去额外空隙 */
+.status-tabs { margin-bottom:0; }
+/* 调整通用 .toolbar 若同时具备 filter-toolbar 则不再额外 padding */
+.toolbar.filter-toolbar { padding:0; } /* 取消组合类下的 padding */
+/* 保留原 toolbar 但去除背景差异避免覆写 */
+/* Tabs 尺寸调整：高度 44px 字体 14px 左右 12px */
+.status-tabs :deep(.el-tabs__nav-wrap){ height:44px; }
+.status-tabs :deep(.el-tabs__item){
+  height:44px;
+  line-height:44px;
+  font-size:14px;
+  padding:0 12px !important;
+  font-weight:400;
+  position:relative;
+  transition:color .18s ease;
+}
+/* 激活条细化与圆角 */
+.status-tabs :deep(.el-tabs__active-bar){
+  height:3px;
+  border-radius:2px 2px 0 0;
+  background:#409eff;
+  transition:transform .25s cubic-bezier(.4,0,.2,1), width .25s;
+}
+/* 计数徽标 */
+.status-tabs :deep(.tab-count){
+  color:#606266;
+  font-size:12px;
+  font-weight:400;
+  opacity:.85;
+}
+.status-tabs :deep(.el-tabs__item.is-active){
+  color:#409eff;
+  font-weight:600;
+}
+.status-tabs :deep(.el-tabs__item:not(.is-active):hover){
+  color:#409eff;
+}
+/* 允许超长时省略号（已由 inline style 控制，这里确保） */
+.status-tabs :deep(.el-tabs__item){
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:180px;
+}
+
+/* === Tabs 全局统一（修复之前 :deep 在全局文件无效的问题） === */
+.status-tabs.el-tabs--top > .el-tabs__header { margin-bottom:0; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-wrap { height:48px; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-wrap .el-tabs__nav { height:48px; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item {
+  height:48px !important;
+  /* 使用 flex 垂直居中内的 24px 行高文本 */
+  display:flex;
+  align-items:center; /* 垂直居中 */
+  line-height:24px !important; /* 文字真实行高 */
+  padding:0 16px !important; /* 恢复你原始16px 间距 */
+  font-size:16px !important;
+  font-weight:400;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:200px;
+}
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item.is-active { font-weight:600; }
+/* 激活条重新匹配 48px 高度下视觉比例 */
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__active-bar { height:3px; border-radius:2px 2px 0 0; }
+/* 计数徽标随主体字号缩放，保持 12px */
+.status-tabs .tab-count { font-size:12px; line-height:16px; }
+/* 底部分隔线 */
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-scroll { border-bottom:1px solid #e5e7eb; }
+/* === Filter Toolbar 控件放大 === */
+/* :root { --filter-control-height:40px; } */
+/* .filter-toolbar { gap:12px; } */
+.filter-toolbar .el-input__wrapper,
+.filter-toolbar .el-select .el-select__wrapper,
+.filter-toolbar .el-date-editor .el-input__wrapper,
+.filter-toolbar .el-cascader .el-input__wrapper,
+.filter-toolbar .el-autocomplete .el-input__wrapper {
+  min-height:var(--ts-filter-control-height);
+  height:var(--ts-filter-control-height);
+  padding:0 12px;
+  font-size:14px;
+}
+.filter-toolbar .el-input__wrapper .el-input__inner { line-height:var(--ts-filter-control-height); font-size:14px; }
+.filter-toolbar .el-select .el-select__selection { min-height:var(--ts-filter-control-height); }
+.filter-toolbar .el-button { height:var(--ts-filter-control-height); padding:0 18px; font-size:14px; display:inline-flex; align-items:center; }
+/* 图标按钮保持正方形 */
+.filter-toolbar .el-button.is-circle { width:var(--ts-filter-control-height); padding:0; }
+/* Tag / 多选 collapse 区域行高调整 */
+.filter-toolbar .el-select__tags { align-items:center; }
+/* 日期范围控件特殊宽度内部 input 对齐 */
+.filter-toolbar .el-date-editor .el-range-input { line-height:calc(var(--ts-filter-control-height) - 2px); font-size:14px; }
+/* === 清理旧 Tabs 冲突样式，统一 48px 版本 === */
+/* 移除: .status-tabs :deep(.el-tabs__nav-wrap){height:44px;} 等旧规则 */
+.status-tabs :deep(.el-tabs__nav-wrap),
+.status-tabs :deep(.el-tabs__item),
+.status-tabs :deep(.el-tabs__active-bar) { /* 旧规则留空以防止被其它构建器注入 */ }
+/* 删除空占位旧规则，直接保留统一 48px 结构化定义 */
+/* 统一使用高优先级结构化选择器 */
+.status-tabs.el-tabs--top > .el-tabs__header { margin-bottom:0; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-wrap { height:48px; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-wrap .el-tabs__nav { height:48px; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item {
+  height:48px !important;
+  display:flex;
+  align-items:center;
+  line-height:24px !important;
+  padding:0 16px !important;
+  font-size:16px !important;
+  font-weight:400;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:200px;
+  transition:color .18s ease;
+}
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item.is-active { color:#409eff; font-weight:600; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item:not(.is-active):hover { color:#409eff; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__active-bar { height:3px; border-radius:2px 2px 0 0; background:#409eff; }
+.status-tabs .tab-count { font-size:12px; line-height:16px; color:#606266; opacity:.85; }
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__nav-scroll { border-bottom:1px solid #e5e7eb; }
+/* === Global Spacing & Sizing Tokens (抽象间距/尺寸供复用) === */
+:root {
+  /* 基础间距刻度 */
+  --ts-space-0:0;
+  --ts-space-2:2px;
+  --ts-space-4:4px;
+  --ts-space-6:6px;
+  --ts-space-8:8px;
+  --ts-space-10:10px;
+  --ts-space-12:12px;
+  --ts-space-16:16px;
+  --ts-space-20:20px;
+  --ts-space-24:24px;
+  --ts-space-32:32px;
+  /* 组件高度 */
+  --ts-filter-control-height:40px; /* 过滤条输入/选择统一高度 */
+  --ts-btn-height-md:40px;
+  --ts-btn-height-sm:32px;
+  /* Tabs */
+  --ts-tab-height:48px;
+  --ts-tab-h-padding:16px;
+  /* 卡片 / 区块 */
+  --ts-card-margin-x:16px;
+  --ts-card-gap-y:12px;
+}
+
+/* 用于与旧变量向后兼容 */
+:root { --filter-control-height: var(--ts-filter-control-height); }
+
+/* === Utility Spacing Classes (工具类) === */
+.u-m-0{margin:0!important;} .u-p-0{padding:0!important;}
+.u-mt-4{margin-top:var(--ts-space-4)!important;} .u-mt-8{margin-top:var(--ts-space-8)!important;} .u-mt-12{margin-top:var(--ts-space-12)!important;} .u-mt-16{margin-top:var(--ts-space-16)!important;}
+.u-mb-4{margin-bottom:var(--ts-space-4)!important;} .u-mb-8{margin-bottom:var(--ts-space-8)!important;} .u-mb-12{margin-bottom:var(--ts-space-12)!important;} .u-mb-16{margin-bottom:var(--ts-space-16)!important;}
+.u-pt-8{padding-top:var(--ts-space-8)!important;} .u-pt-12{padding-top:var(--ts-space-12)!important;} .u-pt-16{padding-top:var(--ts-space-16)!important;}
+.u-pb-8{padding-bottom:var(--ts-space-8)!important;} .u-pb-12{padding-bottom:var(--ts-space-12)!important;} .u-pb-16{padding-bottom:var(--ts-space-16)!important;}
+.u-px-12{padding-left:var(--ts-space-12)!important;padding-right:var(--ts-space-12)!important;} .u-px-16{padding-left:var(--ts-space-16)!important;padding-right:var(--ts-space-16)!important;}
+.u-py-8{padding-top:var(--ts-space-8)!important;padding-bottom:var(--ts-space-8)!important;} .u-py-12{padding-top:var(--ts-space-12)!important;padding-bottom:var(--ts-space-12)!important;}
+.u-gap-4{gap:var(--ts-space-4)!important;} .u-gap-8{gap:var(--ts-space-8)!important;} .u-gap-12{gap:var(--ts-space-12)!important;} .u-gap-16{gap:var(--ts-space-16)!important;}
+
+/* 布局容器通用类 */
+.layout-horizontal { display:flex; align-items:center; }
+.layout-center-between { display:flex; align-items:center; justify-content:space-between; }
+.layout-col { display:flex; flex-direction:column; }
+
+/* 过滤工具条基于 tokens (保持原样式逻辑) */
+.filter-toolbar { gap: var(--ts-space-12); }
+.filter-toolbar .el-button { height:var(--ts-filter-control-height); }
+.filter-toolbar .el-input__wrapper,
+.filter-toolbar .el-select .el-select__wrapper,
+.filter-toolbar .el-date-editor .el-input__wrapper,
+.filter-toolbar .el-cascader .el-input__wrapper,
+.filter-toolbar .el-autocomplete .el-input__wrapper { min-height:var(--ts-filter-control-height); height:var(--ts-filter-control-height); }
+
+/* Tabs 依赖 tokens */
+.status-tabs.el-tabs--top > .el-tabs__header .el-tabs__item { height:var(--ts-tab-height)!important; padding:0 var(--ts-tab-h-padding)!important; }

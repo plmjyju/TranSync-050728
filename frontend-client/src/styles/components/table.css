@@ -1,0 +1,2 @@
+.table-section .pager-bar{ padding: 8px 0; }
+.table-section :is(.el-table__header th){ background: var(--ts-header-bg); }

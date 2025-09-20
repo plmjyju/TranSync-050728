@@ -1,0 +1,3 @@
+.ts-toolbar{ min-height: var(--toolbar-height); padding: 8px var(--ts-horizontal-gap, 16px); background: transparent; }
+.ts-toolbar :is(.el-input,.el-select){ width: 200px; }
+.ts-toolbar .el-button + .el-button{ margin-left: 8px; }

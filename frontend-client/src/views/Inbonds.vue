@@ -9,21 +9,23 @@
           :label="t.label"
           :name="t.name"
         >
-          <InbondToolbar
-            :q="q"
-            :status="status"
-            :showStatus="t.showStatus"
-            :placeholder="t.placeholder"
-            :date-field="dateField"
-            :date-range="dateRange"
-            :clearance-doc="clearanceDoc"
-            @update:q="onFilterChange('q', $event)"
-            @update:status="onFilterChange('status', $event)"
-            @update:dateField="onFilterChange('dateField', $event)"
-            @update:dateRange="onFilterChange('dateRange', $event || [])"
-            @update:clearanceDoc="onFilterChange('clearanceDoc', $event)"
-            @enter="immediateSearch"
-          />
+          <div class="filter-toolbar">
+            <InbondToolbar
+              :q="q"
+              :status="status"
+              :showStatus="t.showStatus"
+              :placeholder="t.placeholder"
+              :date-field="dateField"
+              :date-range="dateRange"
+              :clearance-doc="clearanceDoc"
+              @update:q="onFilterChange('q', $event)"
+              @update:status="onFilterChange('status', $event)"
+              @update:dateField="onFilterChange('dateField', $event)"
+              @update:dateRange="onFilterChange('dateRange', $event || [])"
+              @update:clearanceDoc="onFilterChange('clearanceDoc', $event)"
+              @enter="immediateSearch"
+            />
+          </div>
           <!-- 使用内部 slot 放操作按钮 -->
           <InbondListSection
             :paneKey="t.name"
@@ -100,6 +102,7 @@ import InbondListSection from "../components/inbonds/InbondListSection.vue";
 import InbondToolbar from "../components/inbonds/InbondToolbar.vue";
 import AutoColumns from "../components/inbonds/AutoColumns.vue";
 import InbondEditorDrawer from "../components/inbonds/InbondEditorDrawer.vue";
+import '../styles/sectionLayout.css';
 
 export default {
   name: "ClientInbonds",
@@ -136,15 +139,29 @@ export default {
       selectedRows: [],
       submittingDrafts: false,
       forceKey: 0, // 新增：用于强制重建子组件
+      baselineTableH: null,
+      baselineSectionH: null,
+      baselineLimited: false,
+      _autoHeightTimer: null,
+      // 新增：按视口宽度分桶的基线缓存，避免不同宽度下复用不合适高度
+      baselineCache: {}, // { bucketKey: { tableH, sectionH, limited } }
+      // 新增：ResizeObserver 实例引用
+      _ro: null,
+      // 新增：最近一次高度计算时间戳，用于节流
+      _lastCalcTS: 0,
+      // 新增：进行中的多次重试计数
+      _recalcAttempt: 0,
+      tableViewHeight: null, // 新增：直接用于表格视图高度（max-height）
     };
   },
   computed: {
     computedTableHeight() {
-      // 放宽上限到 1500
-      if (!this.autoHeight) return 1000;
+      // 新：返回用于 max-height 的高度，不再强制 1000 兜底
+      if (!this.autoHeight) return undefined;
+      if (this.tableViewHeight) return this.tableViewHeight;
       const h = Number(this.tableMinH) || 0;
-      if (!h) return 1000; // 初次回退
-      return Math.max(360, Math.min(1500, Math.floor(h)));
+      if (!h) return undefined;
+      return Math.max(260, Math.min(1500, Math.floor(h)));
     },
     computedSectionHeight() {
       // 用表格高度 + 内边距 + 分页器高度，得到卡片的精确总高度
@@ -268,11 +285,50 @@ export default {
   },
   mounted() {
     // 初次计算高度并绑定窗口变化事件
-    this.$nextTick(() => this.computeAutoHeights());
+    this.$nextTick(() => {
+      this.computeAutoHeights();
+      // 调试辅助，全局函数可手动触发并查看当前高度状态
+      if (typeof window !== 'undefined') {
+        window.__inbondDebug = () => {
+          const r = {
+            tableMinH: this.tableMinH,
+            sectionMinH: this.sectionMinH,
+            baselineTableH: this.baselineTableH,
+            baselineSectionH: this.baselineSectionH,
+            activeStatus: this.activeStatus,
+          };
+            // eslint-disable-next-line no-console
+          console.log('[__inbondDebug]', r);
+          this.computeAutoHeights();
+          return r;
+        };
+      }
+    });
     window.addEventListener("resize", this.handleResize, { passive: true });
+    // 新增：使用 ResizeObserver 监听容器尺寸变化
+    const pageWrap = this.$el?.querySelector('.page-wrap') || this.$el;
+    if (window.ResizeObserver && pageWrap) {
+      let pending = false;
+      this._ro = new ResizeObserver(() => {
+        if (!this.autoHeight) return;
+        if (pending) return;
+        pending = true;
+        requestAnimationFrame(() => {
+          pending = false;
+          this.computeAutoHeights({ reason: 'resize-observer' });
+        });
+      });
+      this._ro.observe(pageWrap);
+    }
   },
   beforeUnmount() {
     window.removeEventListener("resize", this.handleResize);
+    if (this._filterTimer) clearTimeout(this._filterTimer);
+    if (this._autoHeightTimer) clearTimeout(this._autoHeightTimer);
+    if (this._ro) {
+      try { this._ro.disconnect(); } catch(e) {}
+      this._ro = null;
+    }
   },
   watch: {
     "$route.query.statusTab"(nv) {
@@ -420,7 +476,6 @@ export default {
       this.selectedRows = [];
       this.forceKey++;
       if (this.$route.query.statusTab !== this.activeStatus) {
-        // 修复缺失括号
         const q = { ...this.$route.query, statusTab: this.activeStatus };
         this.$router.replace({ path: this.$route.path, query: q });
       }
@@ -434,7 +489,7 @@ export default {
       });
       this.$nextTick(() => {
         this.load();
-        this.computeAutoHeights();
+        // 移除立即 computeAutoHeights，等待数据加载后的最终尺寸减少抖动
       });
     },
     onStatusChange() {
@@ -470,59 +525,85 @@ export default {
     onEditorUpdated() {
       this.load();
     },
-    computeAutoHeights() {
+    getViewportBucket() {
+      const w = window.innerWidth || 1920;
+      if (w < 1280) return 'w<1280';
+      if (w < 1600) return '1280-1599';
+      if (w < 1920) return '1600-1919';
+      return '>=1920';
+    },
+    storeBaseline(tableH, sectionH, limited) {
+      const bucket = this.getViewportBucket();
+      this.baselineCache[bucket] = { tableH, sectionH, limited };
+      // 兼容旧字段（保持其它逻辑不崩）
+      this.baselineTableH = tableH;
+      this.baselineSectionH = sectionH;
+      this.baselineLimited = limited;
+    },
+    reuseBaselineIfPossible() {
+      if (this.activeStatus === 'all') return false; // 仅非 all 才复用
+      const bucket = this.getViewportBucket();
+      const bl = this.baselineCache[bucket];
+      if (bl && bl.tableH >= 320 && !bl.limited) {
+        this.tableMinH = bl.tableH;
+        this.sectionMinH = bl.sectionH;
+        return true;
+      }
+      return false;
+    },
+    // 替换/增强原 computeAutoHeights
+    computeAutoHeights(opts = {}) {
       if (!this.autoHeight) return;
-      this.$nextTick(() => {
+      const now = performance.now();
+      if (now - this._lastCalcTS < 40 && !opts.force) return;
+      this._lastCalcTS = now;
+      if (this.reuseBaselineIfPossible()) return;
+      const attempt = (opts.attempt ?? 0);
+      const MAX_ATTEMPTS = 4;
+      const run = () => {
         try {
-          const pageWrap =
-            this.$el.closest(".page-wrap") ||
-            this.$el.querySelector(".page-wrap");
-          const containerH = pageWrap
-            ? pageWrap.getBoundingClientRect().height
-            : window.innerHeight || 900;
-          const pane = this.$el.querySelector(".el-tab-pane.is-active");
+          const vh = window.innerHeight || document.documentElement.clientHeight || 900;
+          const tabsHeader = document.querySelector('.status-tabs .el-tabs__header');
+            const headerH = tabsHeader ? tabsHeader.getBoundingClientRect().height : 0;
+          // 当前激活 pane 内 filter
+          const pane = document.querySelector('.page-wrap .el-tab-pane.is-active');
           if (!pane) return;
-          const sectionCard = pane.querySelector(".section-card");
-          const tableWrap = pane.querySelector(".table-wrap");
-          const pagerEl = pane.querySelector(".pager");
-          const padTop = 16,
-            padBottom = 0,
-            bottomGutter = 8;
-          const pagerH = pagerEl ? pagerEl.offsetHeight || 0 : 0;
-          if (tableWrap) {
-            const rect = tableWrap.getBoundingClientRect();
-            const topOffset =
-              rect.top - (pageWrap ? pageWrap.getBoundingClientRect().top : 0);
-            const available = containerH - topOffset - bottomGutter - pagerH;
-            // 放宽内层可用高度上限到 1500
-            const tableH = Math.max(300, Math.min(1500, Math.floor(available)));
-            this.tableMinH = tableH;
-            this.sectionPadTop = padTop;
-            this.sectionPadBottom = padBottom;
-            this.pagerBlockH = pagerH;
-            if (sectionCard) {
-              const cardRect = sectionCard.getBoundingClientRect();
-              const cardTopOffset =
-                cardRect.top -
-                (pageWrap ? pageWrap.getBoundingClientRect().top : 0);
-              const cardAvail = containerH - cardTopOffset - bottomGutter;
-              const desired = tableH + padTop + padBottom + pagerH;
-              this.sectionMinH = Math.max(340, Math.min(cardAvail, desired));
-            } else {
-              this.sectionMinH = Math.max(
-                340,
-                tableH + padTop + padBottom + pagerH
-              );
-            }
-          } else {
-            this.tableMinH = this.tableMinH || 600;
-            this.sectionMinH = this.sectionMinH || 600;
+          const filterBar = pane.querySelector('.filter-toolbar');
+          const filterH = filterBar ? filterBar.getBoundingClientRect().height : 0;
+          const opsBar = pane.querySelector('.section-card .ops-bar');
+          const opsH = opsBar ? opsBar.getBoundingClientRect().height : 0;
+          const pagerEl = pane.querySelector('.pager-bar, .pager');
+          const pagerH = pagerEl ? pagerEl.getBoundingClientRect().height : 48;
+          const verticalPadding = 16 + 16; // section 上下内边距
+          const chromeGap = 8; // 底部余量
+          const headerOffset = headerH + filterH;
+          let available = vh - headerOffset - chromeGap - verticalPadding - opsH - pagerH;
+          // 初步估算
+          if (available < 200) available = 200;
+          // 小数据行压缩
+          if (this.rows && this.rows.length && this.rows.length < 8) {
+            const rowApprox = 45 * this.rows.length + 52; // 52 预估表头
+            if (rowApprox < available) available = Math.max(260, rowApprox + 4);
           }
-        } catch (e) {
-          this.tableMinH = this.tableMinH || 600;
-          this.sectionMinH = this.sectionMinH || 600;
-        }
-      });
+          const tableH = Math.max(260, Math.min(1500, available));
+          this.tableViewHeight = tableH;
+          this.tableMinH = tableH;
+          const sectionTotal = tableH + verticalPadding + pagerH + opsH;
+          this.sectionMinH = sectionTotal;
+          if (this.activeStatus === 'all' && tableH >= 260) {
+            this.storeBaseline(tableH, sectionTotal, false);
+          }
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[autoHeight-v2]', { vh, headerH, filterH, opsH, pagerH, tableH, sectionMinH: this.sectionMinH, attempt });
+          }
+          if (attempt < MAX_ATTEMPTS - 1) {
+            // 再次校正一次（应对首轮布局不稳定）
+            const delays = [30, 80, 140];
+            setTimeout(() => this.computeAutoHeights({ attempt: attempt + 1, reason: 'retry2' }), delays[attempt]);
+          }
+        } catch (e) { console.warn('[autoHeight-v2-error]', e); }
+      };
+      this.$nextTick(() => requestAnimationFrame(run));
     },
     handleResize() {
       this.computeAutoHeights();
@@ -541,91 +622,23 @@ export default {
 </script>
 
 <style scoped>
-.page-wrap {
-  /* 自适应由父级布局控制，不强制 100vh */
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0; /* 允许内部 flex 子项正确收缩 */
-  box-sizing: border-box;
-  background-color: #f4f6f9;
-}
-/* 恢复原样式 */
-.full-card {
-  /* 原有 height:100% 在父元素没有固定高度时无效，改用flex填充 */
-  flex: 1 1 auto;
-
-  display: flex;
-  flex-direction: column; /* 让内部 tabs 与内容垂直堆叠 */
-  background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --el-card-padding: 0px;
-}
-
-.status-tabs {
-  margin-bottom: 0px;
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-}
-.ops-bar {
-  margin-bottom: 16px;
-  padding-left: 16px;
-  padding-right: 16px;
-}
-.section-card {
-  background-color: #f8f9fa;
-  padding-bottom: 16px;
-  --el-card-padding: 0px;
-  --el-card-border-radius: 0px;
-  padding-top: 16px;
-}
-.table-wrap {
-  background-color: #fff;
-  overflow: hidden;
-  margin-left: 16px;
-  margin-right: 16px;
-  border-radius: 8px 8px 0 0;
-  border: 1px solid #f1f1f1;
-}
-.pager {
-  text-align: left;
-  margin-top: 8px;
-  padding-left: 16px;
-  padding-right: 16px;
-  margin-bottom: 8px;
-}
-.status-tabs :deep(.el-tabs__item) {
-  font-size: 16px;
-  padding: 0 16px;
-  height: 48px;
-  line-height: 48px;
-  font-weight: 0;
-}
-.status-tabs :deep(.el-tabs__nav-wrap) {
-  height: 48px;
-}
-.status-tabs :deep(.el-tabs__header) {
-  margin-bottom: 0;
-}
-.status-tabs :deep(.el-tabs__header .el-tabs__nav .el-tabs__item) {
-  padding-left: 16px !important;
-  padding-right: 16px !important;
-}
-.ops-btn {
-  min-width: 88px;
-  height: 32px;
-  padding: 0 16px;
-}
-.ops-btn:last-child {
-  margin-right: 0;
-}
-/* 次级按钮风格：与示例接近的浅色边框按钮 */
-.ops-btn-secondary {
-  --el-button-bg-color: #fff;
-  padding: 0 16px;
-}
+/* 仅保留本页面相对通用样式的增量部分 */
+.ops-bar { margin-bottom:16px; padding:0 16px; }
+.section-card { background-color:#f8f9fa; padding:16px 0 16px; --el-card-padding:0; --el-card-border-radius:0; }
+.table-wrap { background:#fff; overflow:hidden; margin:0 16px; border-radius:8px 8px 0 0; border:1px solid #f1f1f1; }
+.pager { text-align:left; margin:8px 16px 8px; }
+.ops-btn { min-width:88px; height:32px; padding:0 16px; }
+.ops-btn-secondary { --el-button-bg-color:#fff; padding:0 16px; }
+</style>
+<style>
+/* 全局高度与 flex 布局兜底，确保自适应计算有意义 */
+html, body, #app { height:100%; }
+.page-wrap, .full-card, .full-card > .el-card__body { height:100%; display:flex; flex-direction:column; }
+.status-tabs { flex:1 1 auto; display:flex; flex-direction:column; }
+.status-tabs > .el-tabs__content { flex:1 1 auto; display:flex; flex-direction:column; }
+.el-tab-pane { flex:1 1 auto; display:flex; flex-direction:column; }
+/* 使 sectionCard 内部表格区可以撑满 */
+.section-card .table-shell { display:flex; flex-direction:column; flex:1 1 auto; }
+.section-card .table-wrap { flex:1 1 auto; display:flex; flex-direction:column; }
+.section-card .table-wrap .el-table { flex:1 1 auto; }
 </style>

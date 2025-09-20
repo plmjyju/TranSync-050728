@@ -96,6 +96,18 @@ export async function setupDynamicRoutes(perms, r) {
         requiresClient: true,
       },
     },
+    // 新增：航空单页面（复用包裹查看权限，后续可引入独立权限 client.airwaybill.view）
+    {
+      name: "client-airwaybills",
+      path: "/airwaybills",
+      component: () => import("../views/AirWaybills.vue"),
+      meta: {
+        title: "航空单",
+        icon: "Promotion",
+        permissions: ["client.package.view"],
+        requiresClient: true,
+      },
+    },
   ];
 
   const allow = (route) => {
